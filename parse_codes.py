@@ -16,6 +16,9 @@ import os, sys
 # zpg,X		....	zeropage, X-indexed	 	OPC $LL,X	 	operand is address incremented by X; address hibyte = zero ($00xx); no page transition
 # zpg,Y		....	zeropage, Y-indexed	 	OPC $LL,Y	 	operand is address incremented by Y; address hibyte = zero ($00xx); no page transition
 
+branch_rel = ['BCC', 'BCS', 'BEQ', 'BMI', 'BNE', 'BPL', 'BVC', 'BVS']
+branch_abs = ['JMP', 'JSR']
+
 addr_map = {
 	'A' : 'A',
 	'abs' : 'ABS',
@@ -42,7 +45,7 @@ debug_str = {
 	'ind' : 'OpToStringInd("%s", ptr[0], ptr[1])',
 	'X,ind' : 'OpToStringXInd("%s", ptr[0])',
 	'ind,Y' : 'OpToStringIndY("%s", ptr[0])',
-	'rel': 'OpToStringRel("%s", ptr[0])',
+	'rel': 'OpToStringRel("%s", ip, ptr[0])',
 	'zpg': 'OpToStringZpg("%s", ptr[0])',
 	'zpg,X' : 'OpToStringZpgX("%s", ptr[0])',
 	'zpg,Y' : 'OpToStringZpgY("%s", ptr[0])'	
@@ -54,24 +57,31 @@ def parse_op_codes():
 	instr = []
 	debug_printers = []
 	valid_opcodes = [[1] * 16 for i in range(16)]
+	branch_opcode = [[0] * 16 for i in range(16)]
 	for f in open('opcodes.txt').readlines():
 		codes = f.strip().split('\t')
 		lo_nibble = 0
 		for c in codes:
 			value = (hi_nibble << 4) + lo_nibble
 			lo_nibble += 1
+			x = value & 0xf
+			y = value >> 4
 			# split code in opcode and addr
 			s = c.split()
 			op = s[0]
 			addr = s[1]
 			if op == '???':
-				valid_opcodes[value>>4][value&0xf] = 0
+				valid_opcodes[y][x] = 0
 				continue
 			if not addr in addr_map:
 				print '** Unknown addressing mode: ', addr
-				valid_opcodes[value>>4][value&0xf] = 0
+				valid_opcodes[y][x] = 0
 				continue
 			out = op
+			if op in branch_rel:
+				branch_opcode[y][x] = 1
+			elif op in branch_abs:
+				branch_opcode[y][x] = 2
 			a = addr_map[addr]
 			if len(a) > 0:
 				out += '_' + a
@@ -80,17 +90,28 @@ def parse_op_codes():
 			s = 'case OpCode::%s: return ' + fmt + ';'
 			instr.append(s % (out, op))
 		hi_nibble += 1
+
+	print '** OPCODES **'
 	print ',\n'.join(ops)
 
+	print '** TO STRING **'
 	print '\n'.join(instr)
 
 	# print valid opcodes array
+	print '** VALID OPCODES **'
 	out = []
 	for t in valid_opcodes:
 		out.append(",".join([str(x) for x in t]))
 	print ',\n'.join(out)
 	print
 
+	# print branching opcodes
+	print '** BRANCHING OPCODES **'
+	out = []
+	for t in branch_opcode:
+		out.append(",".join([str(x) for x in t]))
+	print ',\n'.join(out)
+	print
 
 def parse_instr_length():
 	instr_len = [[0] * 16 for i in range(16)]
@@ -110,6 +131,7 @@ def parse_instr_length():
 			if f.find('--------------------------------------------') != -1:
 				inside_block = True
 
+	print '** INSTRUCTION LENGTH **'
 	out = []
 	for t in instr_len:
 		out.append(",".join([str(x) for x in t]))

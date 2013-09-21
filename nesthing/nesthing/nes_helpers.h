@@ -40,14 +40,20 @@ struct NesHeader
         u8 reserved         : 1;
         u8 mapperLowNibble  : 4;
     } flags0;
-    u8 flags1;
+    struct
+    {
+        u8 vsSystem         : 1;
+        u8 reserved         : 3;
+        u8 mapperHiNibble   : 4;
+    } flags1;
+    u8 numRamBanks;
     u8 flags2;
-    u8 flags3;
     u8 reserved[6];
 };
 
-extern const char* OpCodeToString(OpCode op, const u8* ptr);
+extern const char* OpCodeToString(OpCode op, u16 ip, const u8* ptr);
 extern int g_instrLength[];
 extern u8 g_validOpCodes[];
+extern u8 g_branchingOpCodes[];
 
 #endif /* defined(__nesthing__nes_helpers__) */

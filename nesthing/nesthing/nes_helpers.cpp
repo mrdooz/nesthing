@@ -11,27 +11,27 @@ const char* OpToStringA(const char* op)
     return buf;
 }
 
-const char* OpToStringAbs(const char* op, u8 a, u8 b)
+const char* OpToStringAbs(const char* op, u8 lo, u8 hi)
 {
     // operand is address $HHLL
     static char buf[32];
-    sprintf(buf, "%s $%.4x", op, (a << 8) + b);
+    sprintf(buf, "%s $%.4x", op, ((u16)hi << 8) + lo);
     return buf;
 }
 
-const char* OpToStringAbsX(const char* op, u8 a, u8 b)
+const char* OpToStringAbsX(const char* op, u8 lo, u8 hi)
 {
     // operand is address incremented by X with carry
     static char buf[32];
-    sprintf(buf, "%s $%.4x,X", op, (a << 8) + b);
+    sprintf(buf, "%s $%.4x,X", op, ((u16)hi << 8) + lo);
     return buf;
 }
 
-const char* OpToStringAbsY(const char* op, u8 a, u8 b)
+const char* OpToStringAbsY(const char* op, u8 lo, u8 hi)
 {
     // operand is address incremented by Y with carry
     static char buf[32];
-    sprintf(buf, "%s $%.4x,Y", op, (a << 8) + b);
+    sprintf(buf, "%s $%.4x,Y", op, ((u16)hi << 8) + lo);
     return buf;
 }
 
@@ -43,11 +43,11 @@ const char* OpToStringImm(const char* op, const u8 a)
     return buf;
 }
 
-const char* OpToStringInd(const char* op, u8 a, u8 b)
+const char* OpToStringInd(const char* op, u8 lo, u8 hi)
 {
     // operand is effective address
     static char buf[32];
-    sprintf(buf, "%s ($%.4x)", op, (a << 8) + b);
+    sprintf(buf, "%s ($%.4x)", op, ((u16)hi << 8) + lo);
     return buf;
 }
 
@@ -67,11 +67,12 @@ const char* OpToStringIndY(const char* op, u8 a)
     return buf;
 }
 
-const char* OpToStringRel(const char* op, u8 a)
+const char* OpToStringRel(const char* op, u16 ip, u8 a)
 {
     // branch target is PC + offset (BB), bit 7 signifies negative offset
     static char buf[32];
-    sprintf(buf, "%s %s$%.2x", op, a & 0x80 ? "-" : "", a & 0x7f);
+    u8 ofs = a & 0x7f;
+    sprintf(buf, "%s %.4x", op, a & 0x80 ? ip - ofs : ip + ofs);
     return buf;
 }
 
@@ -99,7 +100,7 @@ const char* OpToStringZpgY(const char* op, u8 a)
     return buf;
 }
 
-const char* OpCodeToString(OpCode op, const u8* ptr)
+const char* OpCodeToString(OpCode op, u16 ip, const u8* ptr)
 {
     switch (op)
     {
@@ -112,7 +113,7 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::ASL_A: return OpToStringA("ASL");
         case OpCode::ORA_ABS: return OpToStringAbs("ORA", ptr[0], ptr[1]);
         case OpCode::ASL_ABS: return OpToStringAbs("ASL", ptr[0], ptr[1]);
-        case OpCode::BPL_REL: return OpToStringRel("BPL", ptr[0]);
+        case OpCode::BPL_REL: return OpToStringRel("BPL", ip, ptr[0]);
         case OpCode::ORA_IND_Y: return OpToStringIndY("ORA", ptr[0]);
         case OpCode::ORA_ZPG_X: return OpToStringZpgX("ORA", ptr[0]);
         case OpCode::ASL_ZPG_X: return OpToStringZpgX("ASL", ptr[0]);
@@ -131,7 +132,7 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::BIT_ABS: return OpToStringAbs("BIT", ptr[0], ptr[1]);
         case OpCode::AND_ABS: return OpToStringAbs("AND", ptr[0], ptr[1]);
         case OpCode::ROL_ABS: return OpToStringAbs("ROL", ptr[0], ptr[1]);
-        case OpCode::BMI_REL: return OpToStringRel("BMI", ptr[0]);
+        case OpCode::BMI_REL: return OpToStringRel("BMI", ip, ptr[0]);
         case OpCode::AND_IND_Y: return OpToStringIndY("AND", ptr[0]);
         case OpCode::AND_ZPG_X: return OpToStringZpgX("AND", ptr[0]);
         case OpCode::ROL_ZPG_X: return OpToStringZpgX("ROL", ptr[0]);
@@ -149,7 +150,7 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::JMP_ABS: return OpToStringAbs("JMP", ptr[0], ptr[1]);
         case OpCode::EOR_ABS: return OpToStringAbs("EOR", ptr[0], ptr[1]);
         case OpCode::LSR_ABS: return OpToStringAbs("LSR", ptr[0], ptr[1]);
-        case OpCode::BVC_REL: return OpToStringRel("BVC", ptr[0]);
+        case OpCode::BVC_REL: return OpToStringRel("BVC", ip, ptr[0]);
         case OpCode::EOR_IND_Y: return OpToStringIndY("EOR", ptr[0]);
         case OpCode::EOR_ZPG_X: return OpToStringZpgX("EOR", ptr[0]);
         case OpCode::LSR_ZPG_X: return OpToStringZpgX("LSR", ptr[0]);
@@ -167,7 +168,7 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::JMP_IND: return OpToStringInd("JMP", ptr[0], ptr[1]);
         case OpCode::ADC_ABS: return OpToStringAbs("ADC", ptr[0], ptr[1]);
         case OpCode::ROR_ABS: return OpToStringAbs("ROR", ptr[0], ptr[1]);
-        case OpCode::BVS_REL: return OpToStringRel("BVS", ptr[0]);
+        case OpCode::BVS_REL: return OpToStringRel("BVS", ip, ptr[0]);
         case OpCode::ADC_IND_Y: return OpToStringIndY("ADC", ptr[0]);
         case OpCode::ADC_ZPG_X: return OpToStringZpgX("ADC", ptr[0]);
         case OpCode::ROR_ZPG_X: return OpToStringZpgX("ROR", ptr[0]);
@@ -184,7 +185,7 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::STY_ABS: return OpToStringAbs("STY", ptr[0], ptr[1]);
         case OpCode::STA_ABS: return OpToStringAbs("STA", ptr[0], ptr[1]);
         case OpCode::STX_ABS: return OpToStringAbs("STX", ptr[0], ptr[1]);
-        case OpCode::BCC_REL: return OpToStringRel("BCC", ptr[0]);
+        case OpCode::BCC_REL: return OpToStringRel("BCC", ip, ptr[0]);
         case OpCode::STA_IND_Y: return OpToStringIndY("STA", ptr[0]);
         case OpCode::STY_ZPG_X: return OpToStringZpgX("STY", ptr[0]);
         case OpCode::STA_ZPG_X: return OpToStringZpgX("STA", ptr[0]);
@@ -205,7 +206,7 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::LDY_ABS: return OpToStringAbs("LDY", ptr[0], ptr[1]);
         case OpCode::LDA_ABS: return OpToStringAbs("LDA", ptr[0], ptr[1]);
         case OpCode::LDX_ABS: return OpToStringAbs("LDX", ptr[0], ptr[1]);
-        case OpCode::BCS_REL: return OpToStringRel("BCS", ptr[0]);
+        case OpCode::BCS_REL: return OpToStringRel("BCS", ip, ptr[0]);
         case OpCode::LDA_IND_Y: return OpToStringIndY("LDA", ptr[0]);
         case OpCode::LDY_ZPG_X: return OpToStringZpgX("LDY", ptr[0]);
         case OpCode::LDA_ZPG_X: return OpToStringZpgX("LDA", ptr[0]);
@@ -227,7 +228,7 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::CPY_ABS: return OpToStringAbs("CPY", ptr[0], ptr[1]);
         case OpCode::CMP_ABS: return OpToStringAbs("CMP", ptr[0], ptr[1]);
         case OpCode::DEC_ABS: return OpToStringAbs("DEC", ptr[0], ptr[1]);
-        case OpCode::BNE_REL: return OpToStringRel("BNE", ptr[0]);
+        case OpCode::BNE_REL: return OpToStringRel("BNE", ip, ptr[0]);
         case OpCode::CMP_IND_Y: return OpToStringIndY("CMP", ptr[0]);
         case OpCode::CMP_ZPG_X: return OpToStringZpgX("CMP", ptr[0]);
         case OpCode::DEC_ZPG_X: return OpToStringZpgX("DEC", ptr[0]);
@@ -246,15 +247,14 @@ const char* OpCodeToString(OpCode op, const u8* ptr)
         case OpCode::CPX_ABS: return OpToStringAbs("CPX", ptr[0], ptr[1]);
         case OpCode::SBC_ABS: return OpToStringAbs("SBC", ptr[0], ptr[1]);
         case OpCode::INC_ABS: return OpToStringAbs("INC", ptr[0], ptr[1]);
-        case OpCode::BEQ_REL: return OpToStringRel("BEQ", ptr[0]);
+        case OpCode::BEQ_REL: return OpToStringRel("BEQ", ip, ptr[0]);
         case OpCode::SBC_IND_Y: return OpToStringIndY("SBC", ptr[0]);
         case OpCode::SBC_ZPG_X: return OpToStringZpgX("SBC", ptr[0]);
         case OpCode::INC_ZPG_X: return OpToStringZpgX("INC", ptr[0]);
         case OpCode::SED: return "SED";
         case OpCode::SBC_ABS_Y: return OpToStringAbsY("SBC", ptr[0], ptr[1]);
         case OpCode::SBC_ABS_X: return OpToStringAbsX("SBC", ptr[0], ptr[1]);
-        case OpCode::INC_ABS_X: return OpToStringAbsX("INC", ptr[0], ptr[1]);
-    }
+        case OpCode::INC_ABS_X: return OpToStringAbsX("INC", ptr[0], ptr[1]);    }
     return "** UNKNOWN";
 }
 
@@ -296,4 +296,26 @@ u8 g_validOpCodes[] =
     1,1,0,0,0,1,1,0,1,1,0,0,0,1,1,0,
     1,1,0,0,1,1,1,0,1,1,1,0,1,1,1,0,
     1,1,0,0,0,1,1,0,1,1,0,0,0,1,1,0
+};
+
+// 1 = relative branches
+// 2 = absolute
+u8 g_branchingOpCodes[] =
+{
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
