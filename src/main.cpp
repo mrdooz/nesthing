@@ -6,8 +6,56 @@
 #include "nes_helpers.h"
 #include <vector>
 #include <iostream>
+#include <algorithm>
 
 using namespace std;
+/*
+struct INesHeader
+{
+  u8 id[4];
+  u8 numRomBanks;
+  u8 numVRomBanks;
+  struct
+  {
+    u8 batteryBacked    : 1;
+    u8 trainer          : 1;
+    u8 fourScreenVraw   : 1;
+    u8 reserved         : 1;
+    u8 mapperLowNibble  : 4;
+  } flags6;
+  struct
+  {
+    u8 vsSystem         : 1;
+    u8 reserved         : 3;
+    u8 mapperHiNibble   : 4;
+  } flags7;
+  u8 numRamBanks;
+  u8 flags2;
+  u8 reserved[6];
+};
+*/
+void DumpHeader(const INesHeaderCommon* header)
+{
+  printf("%c%c%c\n", header->id[0], header->id[1], header->id[2]);
+  printf("ROM banks: %d, VROM banks: %d\n", header->numRomBanks, header->numVRomBanks);
+  printf("flags6: %s mirroring, battery: %d, trainer: %d, 4 screen: %d\n",
+    header->flags6.verticalMirroring ? "v" : "h", header->flags6.batteryBacked,
+    header->flags6.trainer, header->flags6.fourScreenVraw);
+  printf("flags7: vs system: %d\n",
+    header->flags7.vsSystem);
+
+  if (header->flags7.ines2 == 0)
+  {
+    const INesHeader1* header1 = (INesHeader1*)header;
+    printf("mapper: %.2x\n", (header->flags7.mapperHiNibble << 4) + header->flags6.mapperLowNibble);
+  }
+  else
+  {
+    // If in ines 2.0 format, ignore hiNibble, because DiskDude! might have overwritten it!
+    const INesHeader1* header1 = (INesHeader1*)header;
+    printf("mapper: %.2x\n", header->flags6.mapperLowNibble);
+  }
+}
 
 void FindJumpDestinations(const u8* base, vector<u16>& branchDestinations)
 {
@@ -78,18 +126,36 @@ int main(int argc, const char * argv[])
     vector<u8> data(fileSize);
     fread(&data[0], fileSize, 1, f);
     
-    const NesHeader& header = *(NesHeader*)&data[0];
+    const INesHeaderCommon* header = (INesHeaderCommon*)&data[0];
+    DumpHeader(header);
+
+    if (header->flags6.mapperLowNibble != 1)
+    {
+      printf("Only mapper 1 is supported\n");
+      return 1;
+    }
  
-    u8* base = &data[sizeof(header) + (header.flags0.trainer ? 512 : 0)];
+    size_t numBanks = header->numRomBanks;
+    u8* base = &data[16 + (header->flags6.trainer ? 512 : 0)];
     u32 ip = 0;
     u32 prevIp = 0;
 
     vector<u16> branchDestinations;
-//    FindJumpDestinations(base, branchDestinations);
+    FindJumpDestinations(base, branchDestinations);
     size_t branchIdx = 0;
     
+    // the 3 interrupt vectors should be at the end of back 1 (16k prg-rom)
+    struct InterruptVectors
+    {
+      u16 nmi;
+      u16 reset;
+      u16 brk;
+    };
+
+    const InterruptVectors* v = (InterruptVectors*)&base[numBanks*16*1024-sizeof(InterruptVectors)];
+
     bool dataMode = false;
-    while (ip < min(65535, header.numRomBanks * 16*1024))
+    while (ip < min(65535u, header->numRomBanks * 16*1024u))
     {
         if (branchIdx < branchDestinations.size())
         {
