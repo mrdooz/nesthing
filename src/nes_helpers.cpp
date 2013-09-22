@@ -3,6 +3,116 @@
 
 using namespace std;
 
+#include <vector>
+#include <iostream>
+#include <algorithm>
+
+using namespace std;
+
+//  |  $2000  | PPU Control Register #1 (W)                              |
+//  |         |                                                          |
+//  |         |    D7: Execute NMI on VBlank                             |
+//  |         |           0 = Disabled                                   |
+//  |         |           1 = Enabled                                    |
+//  |         |    D6: PPU Master/Slave Selection --+                    |
+//  |         |           0 = Master                +-- UNUSED           |
+//  |         |           1 = Slave               --+                    |
+//  |         |    D5: Sprite Size                                       |
+//  |         |           0 = 8x8                                        |
+//  |         |           1 = 8x16                                       |
+//  |         |    D4: Background Pattern Table Address                  |
+//  |         |           0 = $0000 (VRAM)                               |
+//  |         |           1 = $1000 (VRAM)                               |
+//  |         |    D3: Sprite Pattern Table Address                      |
+//  |         |           0 = $0000 (VRAM)                               |
+//  |         |           1 = $1000 (VRAM)                               |
+//  |         |    D2: PPU Address Increment                             |
+//  |         |           0 = Increment by 1                             |
+//  |         |           1 = Increment by 32                            |
+//  |         | D1-D0: Name Table Address                                |
+//  |         |         00 = $2000 (VRAM)                                |
+//  |         |         01 = $2400 (VRAM)                                |
+//  |         |         10 = $2800 (VRAM)                                |
+//  |         |         11 = $2C00 (VRAM)                                |
+//  +---------+----------------------------------------------------------+
+//  |  $2001  | PPU Control Register #2 (W)                              |
+//  |         |                                                          |
+//  |         | D7-D5: Full Background Colour (when D0 == 1)             |
+//  |         |         000 = None  +------------+                       |
+//  |         |         001 = Green              | NOTE: Do not use more |
+//  |         |         010 = Blue               |       than one type   |
+//  |         |         100 = Red   +------------+                       |
+//  |         | D7-D5: Colour Intensity (when D0 == 0)                   |
+//  |         |         000 = None            +--+                       |
+//  |         |         001 = Intensify green    | NOTE: Do not use more |
+//  |         |         010 = Intensify blue     |       than one type   |
+//  |         |         100 = Intensify red   +--+                       |
+//  |         |    D4: Sprite Visibility                                 |
+//  |         |           0 = Sprites not displayed                      |
+//  |         |           1 = Sprites visible                            |
+//  |         |    D3: Background Visibility                             |
+//  |         |           0 = Background not displayed                   |
+//  |         |           1 = Background visible                         |
+//  |         |    D2: Sprite Clipping                                   |
+//  |         |           0 = Sprites invisible in left 8-pixel column   |
+//  |         |           1 = No clipping                                |
+//  |         |    D1: Background Clipping                               |
+//  |         |           0 = BG invisible in left 8-pixel column        |
+//  |         |           1 = No clipping                                |
+//  |         |    D0: Display Type                                      |
+//  |         |           0 = Colour display                             |
+//  |         |           1 = Monochrome display
+
+
+
+void FindJumpDestinations(const u8* base, vector<u16>& branchDestinations)
+{
+    u16 ip = 0;
+    while (ip < 16*1024)
+    {
+        u8 op = base[ip];
+        if (g_validOpCodes[op])
+        {
+            u16 nextIp = ip + g_instrLength[op];
+            u8 branching = g_branchingOpCodes[op];
+            if (branching)
+            {
+                u16 dest = nextIp;
+                if (branching == 1)
+                {
+                    // relative
+                    u8 ofs = base[ip+1];
+                    if (ofs & 0x80)
+                    {
+                        dest -= (ofs & 0x7f);
+                    }
+                    else
+                    {
+                        dest += (ofs & 0x7f);
+                    }
+                }
+                else if (branching == 2)
+                {
+                    // abs
+                    dest = base[ip+1] + ((u16)base[ip+2] << 8);
+                }
+                
+                if (!binary_search(branchDestinations.begin(), branchDestinations.end(), dest))
+                {
+                    auto it = lower_bound(branchDestinations.begin(), branchDestinations.end(), dest);
+                    branchDestinations.insert(it, dest);
+                }
+            }
+            ip = nextIp;
+        }
+        else
+        {
+            ++ip;
+        }
+    }
+}
+
+
 const char* OpToStringA(const char* op)
 {
     // operand is A

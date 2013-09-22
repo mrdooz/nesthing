@@ -2,6 +2,9 @@
 #define __nesthing__nes_helpers__
 
 #include "opcodes.hpp"
+#include "nesthing.hpp"
+
+#include <vector>
 
 /*
  
@@ -99,5 +102,7 @@ extern const char* OpCodeToString(OpCode op, u16 ip, const u8* ptr);
 extern int g_instrLength[];
 extern u8 g_validOpCodes[];
 extern u8 g_branchingOpCodes[];
+
+extern void FindJumpDestinations(const u8* base, std::vector<u16>& branchDestinations);
 
 #endif /* defined(__nesthing__nes_helpers__) */
