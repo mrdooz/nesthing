@@ -1,0 +1,6 @@
+_win32/Debug/*
+dcc6502/*
+*.suo
+*.log
+*.opensdf
+*.sdf

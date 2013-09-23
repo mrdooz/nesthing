@@ -121,6 +121,7 @@ struct Cpu6502
 
   void RenderState(sf::RenderWindow& window);
   void RenderStack(sf::RenderWindow& window);
+  void RenderMemory(sf::RenderWindow& window, u16 ofs);
 
   void Push16(u16 value);
   void Push8(u8 value);
@@ -523,9 +524,32 @@ void Cpu6502::SingleStep()
   regs.ip += opLength;
 }
 
+void Cpu6502::RenderMemory(sf::RenderWindow& window, u16 ofs)
+{
+  sf::Vector2f pos(400,20);
+  sf::Text text;
+  text.setFont(font);
+  text.setCharacterSize(16);
+  text.setColor(sf::Color::White);
+
+  u8* p = &memory[ofs];
+  for (size_t i = 0; i < 30; ++i)
+  {
+    char buf[128];
+    sprintf(buf, "%.4x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x",
+      ofs,
+      *p++, *p++, *p++, *p++, *p++, *p++, *p++, *p++,
+      *p++, *p++, *p++, *p++, *p++, *p++, *p++, *p++);
+    text.setString(buf);
+    text.setPosition(pos);
+    window.draw(text);
+    pos.y += 15;
+  }
+}
+
 void Cpu6502::RenderStack(sf::RenderWindow& window)
 {
-  sf::Vector2f pos(320,20);
+  sf::Vector2f pos(300,20);
   sf::Text text;
   text.setFont(font);
   text.setCharacterSize(16);
@@ -638,6 +662,7 @@ void Cpu6502::RenderState(sf::RenderWindow& window)
   }
 
   RenderStack(window);
+  RenderMemory(window, 0);
 }
 
 
@@ -648,7 +673,7 @@ int main(int argc, const char * argv[])
   contextSettings.depthBits = 32;
 
   // Create the main window
-  sf::RenderWindow window(sf::VideoMode(640, 480, 32), "It's just a NES thang");
+  sf::RenderWindow window(sf::VideoMode(800, 600, 32), "It's just a NES thang");
   window.setVerticalSyncEnabled(true);
 
   if (argc < 2)
