@@ -179,12 +179,13 @@ const char* OpToStringIndY(const char* op, u8 a)
 
 const char* OpToStringRel(const char* op, u16 ip, u8 a)
 {
-    // branch target is PC + offset (BB), bit 7 signifies negative offset
+    // branch target is PC + offset (BB). a is 2s complement
     static char buf[32];
-    u8 ofs = a & 0x7f;
-    sprintf(buf, "%s %.4x", op, a & 0x80 ? ip - ofs : ip + ofs);
+    s16 res = (s16)ip + (s8)a;
+    sprintf(buf, "%s %.4x", op, (u16)res);
     return buf;
 }
+
 
 const char* OpToStringZpg(const char* op, const u8 a)
 {

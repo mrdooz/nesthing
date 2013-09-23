@@ -9,38 +9,10 @@
 #include <iostream>
 #include <algorithm>
 
-//#import "SFML/Headers/Window.hpp"
-//#include <SFML/Headers/Window.hpp>
-//#include <SFML/OpenGL.hpp>
-
 #include <SFML/Graphics.hpp>
 
 using namespace std;
-/*
- struct INesHeader
- {
- u8 id[4];
- u8 numRomBanks;
- u8 numVRomBanks;
- struct
- {
- u8 batteryBacked    : 1;
- u8 trainer          : 1;
- u8 fourScreenVraw   : 1;
- u8 reserved         : 1;
- u8 mapperLowNibble  : 4;
- } flags6;
- struct
- {
- u8 vsSystem         : 1;
- u8 reserved         : 3;
- u8 mapperHiNibble   : 4;
- } flags7;
- u8 numRamBanks;
- u8 flags2;
- u8 reserved[6];
- };
- */
+
 void DumpHeader(const INesHeaderCommon* header)
 {
   printf("%c%c%c\n", header->id[0], header->id[1], header->id[2]);
@@ -64,29 +36,31 @@ void DumpHeader(const INesHeaderCommon* header)
   }
 }
 
-void DumpBlock(const char* desc, const u8* base, u32 len, u32 org)
+void Disassemble(const u8* data, size_t len, u32 org, vector<pair<u32, string>>* output)
 {
-  if (desc)
-  {
-    printf("*** %s ***\n", desc);
-  }
-  
+  // Returns the disassembly of data. output is sorted, with pairs of (start_addr, disasm)
+  output->clear();
+  char buf[512];
+
   u32 ip = 0;
   u32 prevIp = 0;
-  
+
   while (ip < len)
   {
-    u8 op = base[ip];
+    u8 op = data[ip];
     prevIp = ip;
     if (g_validOpCodes[op])
     {
       u32 nextIp = ip + g_instrLength[op];
-      printf("%.4x    %s\n", ip + org, OpCodeToString(OpCode(op), nextIp + org, &base[ip+1]));
+      output->push_back(make_pair(ip+org, OpCodeToString(OpCode(op), nextIp + org, &data[ip+1])));
+      //sprintf(buf, "%.4x    %s", ip + org, OpCodeToString(OpCode(op), nextIp + org, &data[ip+1]));
       ip = nextIp;
     }
     else
     {
-      printf("%.4x    db %.2x\n", ip + org, op);
+//      sprintf(buf, "%.4x    db %.2x", ip + org, op);
+      sprintf(buf, "db %.2x", op);
+      output->push_back(make_pair(ip+org, buf));
       ++ip;
     }
   }
@@ -100,24 +74,43 @@ struct InterruptVectors
   u16 brk;
 };
 
+struct PrgRom
+{
+  array<u8, 16*1024> data;
+  vector<pair<u32, string> > disasm;
+};
+
 struct Cpu6502
 {
-  Cpu6502()
-    : ip(0)
-    , memory(64*1024)
-    , a(0)
-    , x(0)
-    , y(0)
-    , s(0)
+  enum class Status
   {
-    flags = {0};
+    OK,
+    ROM_NOT_FOUND,
+    INVALID_MAPPER_VERSION,
+    FONT_NOT_FOUND
+  };
+
+  enum class BinOp
+  {
+    OR,
+    AND,
+    XOR
+  };
+
+  Cpu6502()
+    : memory(64*1024)
+    , currentBank(0)
+    , disasmOfs(0)
+  {
+    memset(&flags, 0, sizeof(flags));
+    memset(&regs, 0, sizeof(regs));
     flags.r = 1;
   }
 
-  bool LoadINes(const char* filename);
+  Status LoadINes(const char* filename);
 
   void SetIp(u32 v);
-  void Execute();
+  void SingleStep();
   void Reset();
   
   void LoadRegister(s8* reg, s8 value);
@@ -125,6 +118,40 @@ struct Cpu6502
   void LoadAbsolute(u16 addr, u8* reg);
   
   void SetFlags(s8 value);
+
+  void RenderState(sf::RenderWindow& window);
+  void RenderStack(sf::RenderWindow& window);
+
+  void Push16(u16 value);
+  void Push8(u8 value);
+  u16 Pop16();
+  u8 Pop8();
+
+  void DoBinOp(BinOp op, s8* reg, u8 value)
+  {
+    switch (op)
+    {
+      case BinOp::OR:
+      {
+        *reg = *reg | value;
+        break;
+      }
+
+      case BinOp::AND:
+      {
+        *reg = *reg & value;
+        break;
+      }
+
+      case BinOp::XOR:
+      {
+        *reg = *reg ^ value;
+        break;
+      }
+
+    }
+    SetFlags(*reg);
+  }
   
   union
   {
@@ -163,7 +190,7 @@ struct Cpu6502
   {
     u8 c : 1;   // carry
     u8 z : 1;   // zero
-    u8 i : 1;   // interrupt enable
+    u8 i : 1;   // interrupt disabled
     u8 d : 1;   // decimal mode
     u8 b : 1;   // software interrupt
     u8 r : 1;   // reserved (1)
@@ -171,22 +198,32 @@ struct Cpu6502
     u8 s : 1;   // sign
   } flags;
   
-  u32 ip;
   vector<u8> memory;
   
-  typedef array<u8, 16*1024> PrgBank;
-  vector<PrgBank> rom;
-  
-  s8 a, x, y;
-  u16 s;
+  vector<PrgRom> prgRom;
+
+  size_t currentBank;
+
+  struct  
+  {
+    u32 ip;
+    u8 s;
+    s8 a, x, y;
+  } regs;
+
+  sf::Font font;
+
+  int disasmOfs;
 };
 
-bool Cpu6502::LoadINes(const char* filename)
+Cpu6502 cpu;
+
+Cpu6502::Status Cpu6502::LoadINes(const char* filename)
 {
   FILE* f = fopen(filename, "rb");
   if (!f)
   {
-    return false;
+    return Status::ROM_NOT_FOUND;
   }
   
   fseek(f, 0, SEEK_END);
@@ -203,7 +240,7 @@ bool Cpu6502::LoadINes(const char* filename)
   if (header->flags6.mapperLowNibble != 1)
   {
     printf("Only mapper 1 is supported\n");
-    return false;
+    return Status::INVALID_MAPPER_VERSION;
   }
   
   size_t numBanks = header->numRomBanks;
@@ -212,33 +249,53 @@ bool Cpu6502::LoadINes(const char* filename)
   // copy the PRG ROM
   for (size_t i = 0; i < numBanks; ++i)
   {
-    rom.push_back(PrgBank());
-    memcpy(rom.back().data(), &base[i*16*1024], 16*1024);
+    PrgRom rom;
+    memcpy(&rom.data[0], &base[i*16*1024], 16*1024);
+    // Just disassemble the last bank on init
+    if (i == numBanks - 1)
+    {
+      Disassemble(&rom.data[0], rom.data.size(), 0xc000, &rom.disasm);
+    }
+    prgRom.emplace_back(rom);
   }
-  
-  return true;
+
+#ifdef _WIN32
+  const char* fontName = "/projects/nesthing/ProggyClean.ttf";
+#else
+  const char* fontName = "/users/dooz/projects/nesthing/ProggyClean.ttf";
+#endif
+  if (!font.loadFromFile(fontName))
+  {
+    return Status::FONT_NOT_FOUND;
+  }
+
+  return Status::OK;
 }
 
 void Cpu6502::SetIp(u32 v)
 {
-  ip = v;
+  regs.ip = v;
 }
 
 void Cpu6502::Reset()
 {
+  // Turn off interrupts
+  flags.i = 1;
+
+  // Point the stack ptr to the top of the stack
+  regs.s = 0xff;
+
   // For mapper 1, the first bank is loaded into $8000, and the
   // last bank info $c000
-  memcpy(&memory[0x8000], rom[0].data(), 16 * 1024);
-  memcpy(&memory[0xc000], rom.back().data(), 16 * 1024);
+  memcpy(&memory[0x8000], &prgRom[0].data[0], 16 * 1024);
+  memcpy(&memory[0xc000], &prgRom.back().data[0], 16 * 1024);
+
+  currentBank = prgRom.size() - 1;
 
   // Get the current interrupt table, and start executing the
   // reset interrupt
   const InterruptVectors* v = (InterruptVectors*)&memory[0xfffa];
-  ip = v->reset;
-  
-  
-  DumpBlock("RESET INTERRUPT", &memory[v->reset], 0xffff - v->reset, ip);
-
+  regs.ip = v->reset;
 }
 
 void Cpu6502::StoreAbsolute(u16 addr, u8 value)
@@ -261,15 +318,21 @@ void Cpu6502::StoreAbsolute(u16 addr, u8 value)
 
 void Cpu6502::LoadAbsolute(u16 addr, u8* reg)
 {
+  u8 value;
   switch (addr)
   {
     case 0x2002:
+    {
       // PPU Status Register
+      value = 0x80;
+      SetFlags(value);
+      *reg = value;
       break;
+    }
       
     default:
     {
-      u8 value = memory[addr];
+      value = memory[addr];
       SetFlags(value);
       *reg = value;
       break;
@@ -290,20 +353,73 @@ void Cpu6502::LoadRegister(s8* reg, s8 value)
   SetFlags(value);
 }
 
-void Cpu6502::Execute()
+void Cpu6502::Push16(u16 value)
 {
+  memory[0x100 + regs.s-1] = value & 0xff;
+  memory[0x100 + regs.s-0] = (value >> 8) & 0xff;
+  regs.s -= 2;
+}
+
+void Cpu6502::Push8(u8 value)
+{
+  memory[0x100 + regs.s] = value;
+  regs.s--;
+}
+
+u16 Cpu6502::Pop16()
+{
+  regs.s += 2;
+  return (u16)memory[0x100 + regs.s-1] + ((u16)memory[0x100 + regs.s] << 8);
+}
+
+u8 Cpu6502::Pop8()
+{
+  regs.s++;
+  return memory[0x100 + regs.s];
+}
+
+void Cpu6502::SingleStep()
+{
+  u8 lo = memory[regs.ip+1];
+  u8 hi = memory[regs.ip+2];
+
+  auto GetAddr = [this]() { return memory[regs.ip+1] + (memory[regs.ip+2] << 8); };
+  OpCode op = (OpCode)memory[regs.ip];
+  int opLength = g_instrLength[(u8)op];
   
-  auto GetAddr = [this]() { return memory[ip+1] + (memory[ip+2] << 8); };
-  
-  OpCode op = (OpCode)memory[ip];
   switch (op)
   {
+    case OpCode::LSR_A:
+    {
+      u8 lsb = regs.a & 1;
+      regs.a = (u8)regs.a >> 1;
+      flags.c = lsb;
+      break;
+    }
+
+    case OpCode::AND_IMM:
+    {
+      DoBinOp(BinOp::AND, &regs.a, (s8)lo);
+      break;
+    }
+
+    case OpCode::ORA_IMM:
+    {
+      DoBinOp(BinOp::OR, &regs.a, (s8)lo);
+      break;
+    }
+
+    case OpCode::EOR_IMM:
+    {
+      DoBinOp(BinOp::XOR, &regs.a, (s8)lo);
+      break;
+    }
       
     case OpCode::BPL_REL:
     {
       if (!flags.s)
       {
-        ip += (s8)memory[ip+1];
+        regs.ip += (s8)lo;
       }
       break;
     }
@@ -319,82 +435,214 @@ void Cpu6502::Execute()
       flags.i  = 0;
       break;
     }
-      
-    case OpCode::JMP_ABS:
-    {
-      ip = GetAddr();
-      DumpBlock("JMP", &memory[ip], (u32)memory.size() - ip, ip);
-      break;
-    }
-      
+            
     case OpCode::LDA_IMM:
     {
-      LoadRegister(&a, (s8)memory[ip+1]);
+      LoadRegister(&regs.a, (s8)lo);
       break;
+    }
+
+    case OpCode::LDA_ZPG:
+    {
+      LoadRegister(&regs.a, (s8)memory[lo]);
     }
     
     case OpCode::LDX_IMM:
     {
-      LoadRegister(&x, (s8)memory[ip+1]);
+      LoadRegister(&regs.x, (s8)lo);
       break;
     }
 
     case OpCode::LDY_IMM:
     {
-      LoadRegister(&y, (s8)memory[ip+1]);
+      LoadRegister(&regs.y, (s8)lo);
       break;
     }
       
     case OpCode::LDA_ABS:
     {
-      LoadAbsolute(GetAddr(), (u8*)&a);
+      LoadAbsolute(GetAddr(), (u8*)&regs.a);
       break;
     }
       
     case OpCode::LDX_ABS:
     {
-      LoadAbsolute(GetAddr(), (u8*)&x);
+      LoadAbsolute(GetAddr(), (u8*)&regs.x);
       break;
     }
 
     case OpCode::LDY_ABS:
     {
-      LoadAbsolute(GetAddr(), (u8*)&y);
+      LoadAbsolute(GetAddr(), (u8*)&regs.y);
       break;
     }
       
     case OpCode::STA_ABS:
     {
-      StoreAbsolute(GetAddr(), a);
+      StoreAbsolute(GetAddr(), regs.a);
       break;
     }
     
     case OpCode::STX_ABS:
     {
-      StoreAbsolute(GetAddr(), x);
+      StoreAbsolute(GetAddr(), regs.x);
       break;
     }
 
     case OpCode::STY_ABS:
     {
-      StoreAbsolute(GetAddr(), y);
+      StoreAbsolute(GetAddr(), regs.y);
       break;
     }
 
-    default:
+    case OpCode::JMP_ABS:
+    {
+      regs.ip = GetAddr();
+      // Note: return here, to avoid the ip += instr_size, because the jump is to an absolut address
       return;
+    }
+
+    case OpCode::JSR_ABS:
+    {
+      // push the return address on the stack
+      Push16(regs.ip + opLength);
+      regs.ip = GetAddr();
+      return;
+    }
+
+    case OpCode::RTS:
+    {
+      regs.ip = Pop16();
+      return;
+    }
+
+    default:
+      break;
   }
   
-  ip += g_instrLength[(u8)op];
+  regs.ip += opLength;
 }
 
-Cpu6502 cpu;
+void Cpu6502::RenderStack(sf::RenderWindow& window)
+{
+  sf::Vector2f pos(320,20);
+  sf::Text text;
+  text.setFont(font);
+  text.setCharacterSize(16);
+  text.setColor(sf::Color(255,255,255,255));
+
+  for (size_t i = 0; i < 30; ++i)
+  {
+    char buf[32];
+    u32 cur = 0x1ff - i * 2;
+    sprintf(buf, "%.4x %.2x%.2x", cur, memory[cur], memory[cur - 1]);
+    text.setString(buf);
+    text.setPosition(pos);
+    text.setColor(cur == 0x100 + regs.s ? sf::Color::Yellow : sf::Color::White);
+    window.draw(text);
+    pos.y += 15;
+  }
+}
+
+void Cpu6502::RenderState(sf::RenderWindow& window)
+{
+  sf::Vector2f pos(0,0);
+  sf::Text text;
+  text.setFont(font);
+  text.setCharacterSize(16);
+
+  // write flags
+  auto fnDrawFlag = [&](const char* flag, u8 value) {
+    text.setPosition(pos);
+    text.setColor(value ? sf::Color::Red : sf::Color::White);
+    text.setString(flag);
+    window.draw(text);
+    pos.x += 10;
+  };
+
+  auto fnRegister8 = [&](const char* reg, u8 value) {
+    text.setPosition(pos);
+    char buf[32];
+    int numChars = sprintf(buf, "%s: %.2x", reg, value);
+    text.setString(buf);
+    window.draw(text);
+    pos.x += numChars * 10;
+  };
+
+  auto fnRegister16 = [&](const char* reg, u16 value) {
+    text.setPosition(pos);
+    char buf[32];
+    int numChars = sprintf(buf, "%s: %.4x", reg, value);
+    text.setString(buf);
+    window.draw(text);
+    pos.x += numChars * 10;
+  };
+
+  fnDrawFlag("C", flags.c);
+  fnDrawFlag("Z", flags.z);
+  fnDrawFlag("I", flags.i);
+  fnDrawFlag("D", flags.d);
+  fnDrawFlag("B", flags.b);
+  fnDrawFlag("V", flags.v);
+  fnDrawFlag("S", flags.s);
+
+  text.setColor(sf::Color::White);
+  pos.x += 20;
+  fnRegister8("A", regs.a);
+  fnRegister8("X", regs.x);
+  fnRegister8("Y", regs.y);
+  fnRegister16("IP", regs.ip);
+  fnRegister16("S", regs.s);
+
+  pos = sf::Vector2f(0, 20);
+
+  auto& rom = prgRom[currentBank];
+  u32 ofs = 0xc000;
+
+  // Look for the current IP in the disassemble block (ideally it should always be there..)
+  typedef pair<u32, string> Val;
+  auto it = find_if(rom.disasm.begin(), rom.disasm.end(), [=](const Val& a)
+  {
+    return a.first == regs.ip;
+  });
+
+  if (it != rom.disasm.end())
+  {
+    // write disassemble
+    // TODO: proper range checking on this
+    auto startIt = max(rom.disasm.begin(), it - 10 + disasmOfs);
+    int cnt = 0;
+    for (auto it = startIt; it != rom.disasm.end() && cnt < 30; ++it, ++cnt)
+    {
+      text.setPosition(pos);
+      u32 curIp = it->first;
+      // Create the string "ADDR BYTES OPCODE"
+      char buf[256];
+      char* bufPtr = buf + sprintf(buf, "%.4x    ", curIp);
+      // "max" to handle the case of illegal instructions
+      size_t numBytes = max(1, g_instrLength[rom.data[curIp-ofs]]);
+      for (size_t i = 0; i < numBytes; ++i)
+      {
+        bufPtr += sprintf(bufPtr, "%.2x", rom.data[curIp-ofs+i]);
+      }
+      for (size_t i = 0; i < 3 - numBytes + 2; ++i)
+      {
+        bufPtr += sprintf(bufPtr, "  ");
+      }
+      sprintf(bufPtr, "%s", it->second.c_str());
+      text.setString(buf);
+      text.setColor(curIp == regs.ip ? sf::Color::Yellow : sf::Color::White);
+      window.draw(text);
+      pos.y += 15;
+    }
+  }
+
+  RenderStack(window);
+}
 
 
 int main(int argc, const char * argv[])
 {
-//  RotateCube();
-
   // Request a 32-bits depth buffer when creating the window
   sf::ContextSettings contextSettings;
   contextSettings.depthBits = 32;
@@ -403,50 +651,86 @@ int main(int argc, const char * argv[])
   sf::RenderWindow window(sf::VideoMode(640, 480, 32), "It's just a NES thang");
   window.setVerticalSyncEnabled(true);
 
-  sf::Font font;
-  if (!font.loadFromFile("/users/dooz/projects/nesthing/ComputerAmok.ttf"))
-  {
-    return 2;
-  }
-
   if (argc < 2)
   {
     return 1;
   }
   
-  if (!cpu.LoadINes(argv[1]))
+  if (cpu.LoadINes(argv[1]) != Cpu6502::Status::OK)
   {
     printf("error loading rom: %s\n", argv[1]);
   }
 
   cpu.Reset();
+  cpu.RenderState(window);
+  window.display();
 
   bool done = false;
   while (!done)
   {
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape))
+    window.clear();
+
+    sf::Event event;
+    if (window.waitEvent(event))
     {
-      done = true;
-    }
-    else if (sf::Keyboard::isKeyPressed(sf::Keyboard::R))
-    {
-      cpu.Reset();
-    }
-    else if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
-    {
-      cpu.Execute();
+      if (event.type == sf::Event::KeyReleased)
+      {
+        switch (event.key.code)
+        {
+          case sf::Keyboard::Escape:
+          {
+            done = true;
+            break;
+          }
+
+          case sf::Keyboard::R:
+          {
+            cpu.Reset();
+            break;
+          }
+
+          case sf::Keyboard::S:
+          {
+            cpu.SingleStep();
+            break;
+          }
+
+          case sf::Keyboard::Up:
+          {
+            cpu.disasmOfs -= 1;
+            break;
+          }
+
+          case sf::Keyboard::PageUp:
+          {
+            cpu.disasmOfs -= 20;
+            break;
+          }
+
+          case sf::Keyboard::Down:
+          {
+            cpu.disasmOfs += 1;
+            break;
+          }
+
+          case sf::Keyboard::PageDown:
+          {
+            cpu.disasmOfs += 20;
+            break;
+          }
+
+          case sf::Keyboard::Home:
+          {
+            cpu.disasmOfs = 0;
+            break;
+          }
+        }
+      }
     }
 
-    sf::Text text;
-    text.setString("test");
-    text.setFont(font);
-    text.setCharacterSize(75);
-    window.draw(text);
-    
+    cpu.RenderState(window);
     window.display();
-
   }
 
   return 0;
 }
-
