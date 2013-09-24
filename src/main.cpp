@@ -66,6 +66,162 @@ void Disassemble(const u8* data, size_t len, u32 org, vector<pair<u32, string>>*
   }
 }
 
+struct PPU
+{
+  void Write(u16 addr, u8 value);
+
+};
+
+void PPU::Write(u16 addr, u8 value)
+{
+  
+}
+
+struct MMC1
+{
+  MMC1()
+    : shiftRegister(0)
+    , shiftRegisterOfs(0)
+  {
+    memset(&register0, 0, sizeof(register0));
+  }
+
+  void Write(u16 addr, u8 value);
+
+  void WriteRegister(u8 reg, u8 value);
+  void ResetRegister(u8 reg);
+  u8 RegisterFromAddress(u16 addr);
+
+
+  union
+  {
+    struct
+    {
+      u8 mirroring : 2;
+      u8 prgRomSwapBank : 1;
+      u8 prgRomBankSize : 1;
+      u8 chrBankSize : 1;
+    };
+    u8 reg;
+  } register0;
+
+  union
+  {
+    struct
+    {
+      u8 chrBank : 5;
+    };
+    u8 reg;
+  } register1;
+
+  union
+  {
+    struct
+    {
+      u8 chrBank : 5;
+    };
+    u8 reg;
+  } register2;
+
+  union
+  {
+    struct
+    {
+      u8 prgBank : 4;
+      u8 wramDisabled : 1;
+    };
+    u8 reg;
+
+  } register3;
+
+  u8 shiftRegister;
+  u32 shiftRegisterOfs;
+};
+
+void MMC1::WriteRegister(u8 reg, u8 value)
+{
+  switch (reg)
+  {
+    case 0:
+    {
+      break;
+    }
+
+    case 1:
+    {
+      break;
+    }
+
+    case 2:
+    {
+      break;
+    }
+
+    case 3:
+    {
+      break;
+    }
+  }
+
+}
+
+void MMC1::ResetRegister(u8 reg)
+{
+  if (reg >= 4)
+  {
+    return;
+  }
+
+}
+
+void MMC1::Write(u16 addr, u8 value)
+{
+  if (value & 0x80)
+  {
+    ResetRegister(RegisterFromAddress(addr));
+    shiftRegisterOfs = 0;
+  }
+  else if (shiftRegisterOfs < 5)
+  {
+    if (shiftRegisterOfs < 4)
+    {
+      shiftRegister |= (value & 1) << shiftRegisterOfs;
+      shiftRegisterOfs++;
+    }
+    else
+    {
+      WriteRegister(RegisterFromAddress(addr), shiftRegister);
+    }
+  }
+
+}
+
+u8 MMC1::RegisterFromAddress(u16 addr)
+{
+  if (addr < 0x8000)
+  {
+    return 0xff;
+  }
+
+  if (addr < 0xa000)
+  {
+    return 0;
+  }
+
+  if (addr < 0xc000)
+  {
+    return 1;
+  }
+
+  if (addr < 0xe000)
+  {
+    return 2;
+  }
+
+  return 3;
+}
+
+
 // the 3 interrupt vectors are at the back of the last bank
 struct InterruptVectors
 {
@@ -129,32 +285,9 @@ struct Cpu6502
   u16 Pop16();
   u8 Pop8();
 
-  void DoBinOp(BinOp op, s8* reg, u8 value)
-  {
-    switch (op)
-    {
-      case BinOp::OR:
-      {
-        *reg = *reg | value;
-        break;
-      }
+  void DoBinOp(BinOp op, s8* reg, u8 value);
 
-      case BinOp::AND:
-      {
-        *reg = *reg & value;
-        break;
-      }
 
-      case BinOp::XOR:
-      {
-        *reg = *reg ^ value;
-        break;
-      }
-
-    }
-    SetFlags(*reg);
-  }
-  
   union
   {
     struct
@@ -216,8 +349,10 @@ struct Cpu6502
   sf::Font font;
 
   int disasmOfs;
-
   bool runUntilBranch;
+
+  PPU ppu;
+  MMC1 mmc1;
 };
 
 Cpu6502 cpu;
@@ -302,35 +437,44 @@ void Cpu6502::Reset()
   regs.ip = v->reset;
 }
 
+void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
+{
+  switch (op)
+  {
+    case BinOp::OR:
+    {
+      *reg = *reg | value;
+      break;
+    }
+
+    case BinOp::AND:
+    {
+      *reg = *reg & value;
+      break;
+    }
+
+    case BinOp::XOR:
+    {
+      *reg = *reg ^ value;
+      break;
+    }
+
+  }
+  SetFlags(*reg);
+}
+
 void Cpu6502::StoreAbsolute(u16 addr, u8 value)
 {
-  // Check for writes to MMC1 registers
-  if (addr >= 0x8000)
+  if (addr >= 0x2000 && addr <= 0x2007)
   {
-//    Register 0 (reg0) - written to via $8000-$9FFF
-//    Register 1 (reg1) - written to via $A000-$BFFF
-//    Register 2 (reg2) - written to via $C000-$DFFF
-//    Register 3 (reg3) - written to via $E000-$FFFF
-    if (addr >= 0xa000)
-    {
-      // register 1
+    // Check for PPU writes
+    ppu.Write(addr, value);
 
-    }
-    else if (addr >= 0xc000)
-    {
-      // resister 2
-
-    }
-    else if (addr >= 0xe000)
-    {
-      // register 3
-
-    }
-    else
-    {
-      // register 0: 0x8000-0x9fff
-    }
-
+  }
+  else if (addr >= 0x8000)
+  {
+    // Check for writes to MMC1 registers
+    mmc1.Write(addr, value);
   }
   else
   {
