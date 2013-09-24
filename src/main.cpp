@@ -101,6 +101,7 @@ struct Cpu6502
     : memory(64*1024)
     , currentBank(0)
     , disasmOfs(0)
+    , runUntilBranch(false)
   {
     memset(&flags, 0, sizeof(flags));
     memset(&regs, 0, sizeof(regs));
@@ -110,7 +111,7 @@ struct Cpu6502
   Status LoadINes(const char* filename);
 
   void SetIp(u32 v);
-  void SingleStep();
+  u8 SingleStep();
   void Reset();
   
   void LoadRegister(s8* reg, s8 value);
@@ -215,6 +216,8 @@ struct Cpu6502
   sf::Font font;
 
   int disasmOfs;
+
+  bool runUntilBranch;
 };
 
 Cpu6502 cpu;
@@ -301,19 +304,51 @@ void Cpu6502::Reset()
 
 void Cpu6502::StoreAbsolute(u16 addr, u8 value)
 {
-  switch (addr)
+  // Check for writes to MMC1 registers
+  if (addr >= 0x8000)
   {
-    case 0x2000:
-      ppuControl0.reg = value;
-      break;
-      
-    case 0x2001:
-      ppuControl1.reg = value;
-      break;
-      
-    default:
-      memory[addr] = value;
-      break;
+//    Register 0 (reg0) - written to via $8000-$9FFF
+//    Register 1 (reg1) - written to via $A000-$BFFF
+//    Register 2 (reg2) - written to via $C000-$DFFF
+//    Register 3 (reg3) - written to via $E000-$FFFF
+    if (addr >= 0xa000)
+    {
+      // register 1
+
+    }
+    else if (addr >= 0xc000)
+    {
+      // resister 2
+
+    }
+    else if (addr >= 0xe000)
+    {
+      // register 3
+
+    }
+    else
+    {
+      // register 0: 0x8000-0x9fff
+    }
+
+  }
+  else
+  {
+    switch (addr)
+    {
+      case 0x2000:
+        ppuControl0.reg = value;
+        break;
+
+      case 0x2001:
+        ppuControl1.reg = value;
+        break;
+
+      default:
+        memory[addr] = value;
+        break;
+    }
+
   }
 }
 
@@ -379,14 +414,22 @@ u8 Cpu6502::Pop8()
   return memory[0x100 + regs.s];
 }
 
-void Cpu6502::SingleStep()
+u8 Cpu6502::SingleStep()
 {
   u8 lo = memory[regs.ip+1];
   u8 hi = memory[regs.ip+2];
 
   auto GetAddr = [this]() { return memory[regs.ip+1] + (memory[regs.ip+2] << 8); };
   OpCode op = (OpCode)memory[regs.ip];
+
+  if (runUntilBranch && g_branchingOpCodes[(u8)op])
+  {
+    runUntilBranch = false;
+    return 0;
+  }
+
   int opLength = g_instrLength[(u8)op];
+  bool ipUpdated = false;
   
   switch (op)
   {
@@ -499,8 +542,8 @@ void Cpu6502::SingleStep()
     case OpCode::JMP_ABS:
     {
       regs.ip = GetAddr();
-      // Note: return here, to avoid the ip += instr_size, because the jump is to an absolut address
-      return;
+      ipUpdated = true;
+      break;
     }
 
     case OpCode::JSR_ABS:
@@ -508,20 +551,27 @@ void Cpu6502::SingleStep()
       // push the return address on the stack
       Push16(regs.ip + opLength);
       regs.ip = GetAddr();
-      return;
+      ipUpdated = true;
+      break;
     }
 
     case OpCode::RTS:
     {
       regs.ip = Pop16();
-      return;
+      ipUpdated = true;
+      break;
     }
 
     default:
       break;
   }
-  
-  regs.ip += opLength;
+
+  // Update the IP if the instruction itself hasn't done it already (f ex JMP, JSR, RTS)
+  if (!ipUpdated)
+  {
+    regs.ip += opLength;
+  }
+  return g_instructionTiming[(u8)op];
 }
 
 void Cpu6502::RenderMemory(sf::RenderWindow& window, u16 ofs)
@@ -705,6 +755,19 @@ int main(int argc, const char * argv[])
           case sf::Keyboard::Escape:
           {
             done = true;
+            break;
+          }
+
+          case sf::Keyboard::B:
+          {
+            cpu.runUntilBranch = true;
+            while (cpu.runUntilBranch)
+            {
+              window.clear();
+              cpu.SingleStep();
+              cpu.RenderState(window);
+              window.display();
+            }
             break;
           }
 

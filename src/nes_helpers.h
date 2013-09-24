@@ -102,6 +102,7 @@ extern const char* OpCodeToString(OpCode op, u16 ip, const u8* ptr);
 extern int g_instrLength[];
 extern u8 g_validOpCodes[];
 extern u8 g_branchingOpCodes[];
+extern u8 g_instructionTiming[];
 
 extern void FindJumpDestinations(const u8* base, std::vector<u16>& branchDestinations);
 

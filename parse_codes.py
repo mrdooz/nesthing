@@ -18,6 +18,7 @@ import os, sys
 
 branch_rel = ['BCC', 'BCS', 'BEQ', 'BMI', 'BNE', 'BPL', 'BVC', 'BVS']
 branch_abs = ['JMP', 'JSR']
+branch_ret = []
 
 addr_map = {
 	'A' : 'A',
@@ -115,16 +116,24 @@ def parse_op_codes():
 
 def parse_instr_length():
 	instr_len = [[0] * 16 for i in range(16)]
+	instr_timing = [[0] * 16 for i in range(16)]
 	inside_block = False
 	for f in open('timing.txt').readlines():
 		if inside_block:
 			s = f.strip().split()
-			if len(s) == 5:
-				instr = int(s[2], 16)
-				instr_len[instr>>4][instr&0xf] = int(s[3], 10)
-			if len(s) == 6:
-				instr = int(s[3], 16)
-				instr_len[instr>>4][instr&0xf] = int(s[4], 10)
+			if len(s) == 5 or len(s) == 6:
+				ofs = 0 if len(s) == 5 else 1
+				instr = int(s[2+ofs], 16)
+				lo = instr & 0xf
+				hi = instr >> 4
+				instr_len[hi][lo] = int(s[3+ofs], 10)
+				t = int(s[4+ofs][0], 10)
+				# use high 4 bits for special timing flags
+				if s[4+ofs][1:] == '*':
+					t |= 0x10
+				if s[4+ofs][1:] == '**':
+					t |= 0x20
+				instr_timing[hi][lo] = t
 			else:
 				inside_block = False
 		else:
@@ -134,6 +143,12 @@ def parse_instr_length():
 	print '** INSTRUCTION LENGTH **'
 	out = []
 	for t in instr_len:
+		out.append(",".join([str(x) for x in t]))
+	print ',\n'.join(out)
+
+	print '** INSTRUCTION TIMING **'
+	out = []
+	for t in instr_timing:
 		out.append(",".join([str(x) for x in t]))
 	print ',\n'.join(out)
 
