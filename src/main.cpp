@@ -69,13 +69,77 @@ void Disassemble(const u8* data, size_t len, u32 org, vector<pair<u32, string>>*
 struct PPU
 {
   void Write(u16 addr, u8 value);
+  u8 Read(u16 addr);
 
+  union
+  {
+    struct  
+    {
+      u8 nameTableAddr : 2;
+      u8 ppuAddressIncr : 1;
+      u8 spritePatternTableAddr : 1;
+      u8 backgroundPatterTableAddr : 1;
+      u8 spriteSize : 1;
+      u8 reserved : 1;
+      u8 nmiOnVBlank : 1;
+    };
+    u8 reg;
+  } control1;
+
+  union
+  {
+    struct
+    {
+      u8 colorMode : 1;
+      u8 backgroundClipping : 1;
+      u8 spriteClipping : 1;
+      u8 backgroundVisbility : 1;
+      u8 spriteVisibility : 1;
+      u8 cmykColorMask : 3;
+    };
+    u8 reg;
+  } control2;
+
+  union
+  {
+    struct
+    {
+      u8 reserved : 4;
+      u8 vramWrite : 1;
+      u8 scanlineSpriteCount : 1;
+      u8 sprite0Occurence : 1;
+      u8 vblank : 1;
+    };
+    u8 reg;
+  } status;
 };
 
 void PPU::Write(u16 addr, u8 value)
 {
-  
+  switch (addr)
+  {
+    case 0x2000:
+      control1.reg = value;
+      break;
+
+    case 0x2001:
+      control2.reg = value;
+      break;
+  }
 }
+
+u8 PPU::Read(u16 addr)
+{
+  if (addr == 0x2002)
+  {
+    // HACK
+    status.vblank = 1;
+    return status.reg;
+  }
+
+  return 0;
+}
+
 
 struct MMC1
 {
@@ -270,6 +334,7 @@ struct Cpu6502
   u8 SingleStep();
   void Reset();
   
+  void Transfer(s8* dst, s8* src);
   void LoadRegister(s8* reg, s8 value);
   void StoreAbsolute(u16 addr, u8 value);
   void LoadAbsolute(u16 addr, u8* reg);
@@ -279,6 +344,7 @@ struct Cpu6502
   void RenderState(sf::RenderWindow& window);
   void RenderStack(sf::RenderWindow& window);
   void RenderMemory(sf::RenderWindow& window, u16 ofs);
+
 
   void Push16(u16 value);
   void Push8(u8 value);
@@ -376,9 +442,9 @@ Cpu6502::Status Cpu6502::LoadINes(const char* filename)
   const INesHeaderCommon* header = (INesHeaderCommon*)&data[0];
   DumpHeader(header);
   
-  if (header->flags6.mapperLowNibble != 1)
+  if (header->flags6.mapperLowNibble != 1 && header->flags6.mapperLowNibble != 0)
   {
-    printf("Only mapper 1 is supported\n");
+    printf("Only mapper 0 and 1 is supported\n");
     return Status::INVALID_MAPPER_VERSION;
   }
   
@@ -499,24 +565,17 @@ void Cpu6502::StoreAbsolute(u16 addr, u8 value)
 void Cpu6502::LoadAbsolute(u16 addr, u8* reg)
 {
   u8 value;
-  switch (addr)
+  if (addr >= 0x2000 && addr <= 0x2007)
   {
-    case 0x2002:
-    {
-      // PPU Status Register
-      value = 0x80;
-      SetFlags(value);
-      *reg = value;
-      break;
-    }
-      
-    default:
-    {
-      value = memory[addr];
-      SetFlags(value);
-      *reg = value;
-      break;
-    }
+    value = ppu.Read(addr);
+    SetFlags(value);
+    *reg = value;
+  }
+  else
+  {
+    value = memory[addr];
+    SetFlags(value);
+    *reg = value;
   }
 }
 
@@ -526,6 +585,12 @@ void Cpu6502::SetFlags(s8 value)
   flags.s = value < 0;
 }
 
+
+void Cpu6502::Transfer(s8* dst, s8* src)
+{
+  *dst = *src;
+  SetFlags(*dst);
+}
 
 void Cpu6502::LoadRegister(s8* reg, s8 value)
 {
@@ -623,54 +688,101 @@ u8 Cpu6502::SingleStep()
       flags.i  = 0;
       break;
     }
-            
-    case OpCode::LDA_IMM:
+
+    case OpCode::INC_ABS:
     {
-      LoadRegister(&regs.a, (s8)lo);
+      u8 tmp = memory[GetAddr()] + 1;
+      StoreAbsolute(GetAddr(), tmp);
+      SetFlags(tmp);
       break;
     }
 
-    case OpCode::LDA_ZPG:
+    case OpCode::INC_ZPG:
     {
-      LoadRegister(&regs.a, (s8)memory[lo]);
-    }
-    
-    case OpCode::LDX_IMM:
-    {
-      LoadRegister(&regs.x, (s8)lo);
+      u8 tmp = memory[lo] + 1;
+      StoreAbsolute(lo, tmp);
+      SetFlags(tmp);
       break;
     }
 
-    case OpCode::LDY_IMM:
+    case OpCode::INC_ABS_X:
     {
-      LoadRegister(&regs.y, (s8)lo);
-      break;
-    }
-      
-    case OpCode::LDA_ABS:
-    {
-      LoadAbsolute(GetAddr(), (u8*)&regs.a);
-      break;
-    }
-      
-    case OpCode::LDX_ABS:
-    {
-      LoadAbsolute(GetAddr(), (u8*)&regs.x);
+      u8 tmp = memory[(u16)(GetAddr()+regs.x)] + 1;
+      StoreAbsolute(GetAddr(), tmp);
+      SetFlags(tmp);
       break;
     }
 
-    case OpCode::LDY_ABS:
+    case OpCode::INC_ZPG_X:
     {
-      LoadAbsolute(GetAddr(), (u8*)&regs.y);
+      u8 tmp = memory[(u8)(lo+regs.x)] + 1;
+      StoreAbsolute(lo, tmp);
+      SetFlags(tmp);
       break;
     }
-      
+
+    case OpCode::INX:
+    {
+      regs.x++;
+      SetFlags(regs.x);
+      break;
+    }
+
+    case OpCode::INY:
+    {
+      regs.y++;
+      SetFlags(regs.y);
+      break;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Transfer
+    //////////////////////////////////////////////////////////////////////////
+    case OpCode::TAX:
+    {
+      Transfer(&regs.x, &regs.a);
+      break;
+    }
+
+    case OpCode::TAY:
+    {
+      Transfer(&regs.y, &regs.a);
+      break;
+    }
+
+    case OpCode::TSX:
+    {
+      Transfer(&regs.x, (s8*)&regs.s);
+      break;
+    }
+
+    case OpCode::TXS:
+    {
+      Transfer((s8*)&regs.s, &regs.x);
+      break;
+    }
+
+    case OpCode::TXA:
+    {
+      Transfer(&regs.a, &regs.x);
+      break;
+    }
+
+    case OpCode::TYA:
+    {
+      Transfer(&regs.a, &regs.y);
+      break;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Store
+    //////////////////////////////////////////////////////////////////////////
     case OpCode::STA_ABS:
     {
       StoreAbsolute(GetAddr(), regs.a);
       break;
     }
-    
+
     case OpCode::STX_ABS:
     {
       StoreAbsolute(GetAddr(), regs.x);
@@ -683,6 +795,93 @@ u8 Cpu6502::SingleStep()
       break;
     }
 
+    //////////////////////////////////////////////////////////////////////////
+    // Load
+    //////////////////////////////////////////////////////////////////////////
+    case OpCode::LDA_IMM:
+    {
+      LoadRegister(&regs.a, (s8)lo);
+      break;
+    }
+
+    case OpCode::LDA_ZPG:
+    {
+      LoadRegister(&regs.a, (s8)memory[lo]);
+      break;
+    }
+
+    case OpCode::LDA_ZPG_X:
+    {
+      LoadRegister(&regs.a, (s8)memory[(u8)(lo+regs.x)]);
+      break;
+    }
+
+    case OpCode::LDA_ABS:
+    {
+      LoadAbsolute(GetAddr(), (u8*)&regs.a);
+      break;
+    }
+
+    case OpCode::LDA_ABS_X:
+    {
+      LoadAbsolute((u16)(GetAddr()+regs.x), (u8*)&regs.a);
+      break;
+    }
+
+    case OpCode::LDA_ABS_Y:
+    {
+      LoadAbsolute((u16)(GetAddr()+regs.y), (u8*)&regs.a);
+      break;
+    }
+
+    // add indirect loads
+
+    case OpCode::LDX_IMM:
+    {
+      LoadRegister(&regs.x, (s8)lo);
+      break;
+    }
+
+    case OpCode::LDX_ABS:
+    {
+      LoadAbsolute(GetAddr(), (u8*)&regs.x);
+      break;
+    }
+
+    case OpCode::LDX_ABS_Y:
+    {
+      LoadAbsolute((u16)(GetAddr()+regs.y), (u8*)&regs.x);
+      break;
+    }
+
+    case OpCode::LDX_ZPG:
+    {
+      LoadRegister(&regs.x, (s8)memory[lo]);
+      break;
+    }
+
+    case OpCode::LDX_ZPG_Y:
+    {
+      LoadRegister(&regs.x, (s8)memory[(u8)(lo+regs.y)]);
+      break;
+    }
+
+    case OpCode::LDY_IMM:
+    {
+      LoadRegister(&regs.y, (s8)lo);
+      break;
+    }
+
+
+    case OpCode::LDY_ABS:
+    {
+      LoadAbsolute(GetAddr(), (u8*)&regs.y);
+      break;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Branching instructions
+    //////////////////////////////////////////////////////////////////////////
     case OpCode::JMP_ABS:
     {
       regs.ip = GetAddr();
@@ -828,7 +1027,8 @@ void Cpu6502::RenderState(sf::RenderWindow& window)
   {
     // write disassemble
     // TODO: proper range checking on this
-    auto startIt = max(rom.disasm.begin(), it - 10 + disasmOfs);
+    auto delta = distance(rom.disasm.begin(), it);
+    auto startIt = max(rom.disasm.begin(), it - min(delta, 10 + disasmOfs));
     int cnt = 0;
     for (auto it = startIt; it != rom.disasm.end() && cnt < 30; ++it, ++cnt)
     {
@@ -875,9 +1075,11 @@ int main(int argc, const char * argv[])
     return 1;
   }
   
-  if (cpu.LoadINes(argv[1]) != Cpu6502::Status::OK)
+  Cpu6502::Status status = cpu.LoadINes(argv[1]);
+  if (status != Cpu6502::Status::OK)
   {
     printf("error loading rom: %s\n", argv[1]);
+    return (int)status;
   }
 
   cpu.Reset();
