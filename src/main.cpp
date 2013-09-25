@@ -10,6 +10,11 @@
 #include <algorithm>
 
 #include <SFML/Graphics.hpp>
+#include <SFML/System.hpp>
+
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <CoreServices/CoreServices.h>
 
 using namespace std;
 
@@ -414,7 +419,7 @@ struct Cpu6502
 
   sf::Font font;
 
-  int disasmOfs;
+  size_t disasmOfs;
   bool runUntilBranch;
 
   PPU ppu;
@@ -1027,8 +1032,8 @@ void Cpu6502::RenderState(sf::RenderWindow& window)
   {
     // write disassemble
     // TODO: proper range checking on this
-    auto delta = distance(rom.disasm.begin(), it);
-    auto startIt = max(rom.disasm.begin(), it - min(delta, 10 + disasmOfs));
+    size_t delta = distance(rom.disasm.begin(), it);
+    auto startIt = max(rom.disasm.begin(), it - min(delta, 10u + disasmOfs));
     int cnt = 0;
     for (auto it = startIt; it != rom.disasm.end() && cnt < 30; ++it, ++cnt)
     {
@@ -1085,6 +1090,10 @@ int main(int argc, const char * argv[])
   cpu.Reset();
   cpu.RenderState(window);
   window.display();
+
+  u64 lastTick = mach_absolute_time();
+  u64 tickCount = 0;
+  bool executing = false;
 
   bool done = false;
   while (!done)
@@ -1158,7 +1167,33 @@ int main(int argc, const char * argv[])
             cpu.disasmOfs = 0;
             break;
           }
+
+          case sf::Keyboard::X:
+          {
+            executing = !executing;
+            break;
+          }
         }
+      }
+    }
+
+    if (executing)
+    {
+      u64 now = mach_absolute_time();
+      u64 delta = now - lastTick;
+      Nanoseconds deltaNs = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
+
+      // 236250000.0 / 11
+      s64 masterClock = 236250000;
+      double masterClockTick = 1e9 / (masterClock / 11.0);
+
+//      if (delta)
+      s64 ppuClock = masterClock / (11 * 4);
+      s64 cpuClock = masterClock / (11 * 12);
+
+      if (delta > ppuClock)
+      {
+
       }
     }
 
