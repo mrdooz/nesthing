@@ -21,19 +21,19 @@ branch_abs = ['JMP', 'JSR']
 branch_ret = []
 
 addr_map = {
-	'A' : 'A',
-	'abs' : 'ABS',
-	'abs,X' : 'ABS_X',
-	'abs,Y' : 'ABS_Y',
-	'#' : 'IMM',
-	'impl' : '',
-	'ind' : 'IND',
-	'X,ind' : 'X_IND',
-	'ind,Y' : 'IND_Y',
-	'rel': 'REL',
-	'zpg': 'ZPG',
-	'zpg,X' : 'ZPG_X',
-	'zpg,Y' : 'ZPG_Y'
+	'impl' : (0, ''),
+	'A' : (1, 'A'),
+	'abs' : (2, 'ABS'),
+	'abs,X' : (3, 'ABS_X'),
+	'abs,Y' : (4 ,'ABS_Y'),
+	'#' : (5, 'IMM'),
+	'ind' : (6, 'IND'),
+	'X,ind' : (7, 'X_IND'),
+	'ind,Y' : (8, 'IND_Y'),
+	'rel': (9, 'REL'),
+	'zpg': (10, 'ZPG'),
+	'zpg,X' : (11, 'ZPG_X'),
+	'zpg,Y' : (12, 'ZPG_Y')
 }
 
 debug_str = {
@@ -59,6 +59,7 @@ def parse_op_codes():
 	debug_printers = []
 	valid_opcodes = [[1] * 16 for i in range(16)]
 	branch_opcode = [[0] * 16 for i in range(16)]
+	attr_modes = [[0] * 16 for i in range(16)]
 	for f in open('opcodes.txt').readlines():
 		codes = f.strip().split('\t')
 		lo_nibble = 0
@@ -83,7 +84,8 @@ def parse_op_codes():
 				branch_opcode[y][x] = 1
 			elif op in branch_abs:
 				branch_opcode[y][x] = 2
-			a = addr_map[addr]
+			i, a = addr_map[addr]
+			attr_modes[y][x] = i
 			if len(a) > 0:
 				out += '_' + a
 			ops.append(('%-10s = 0x%02x') % (out, (hi_nibble << 4) + lo_nibble))
@@ -110,6 +112,13 @@ def parse_op_codes():
 	print '** BRANCHING OPCODES **'
 	out = []
 	for t in branch_opcode:
+		out.append(",".join([str(x) for x in t]))
+	print ',\n'.join(out)
+	print
+
+	print '** ADDRESSING MODES **'
+	out = []
+	for t in attr_modes:
 		out.append(",".join([str(x) for x in t]))
 	print ',\n'.join(out)
 	print

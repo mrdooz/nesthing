@@ -103,6 +103,7 @@ extern int g_instrLength[];
 extern u8 g_validOpCodes[];
 extern u8 g_branchingOpCodes[];
 extern u8 g_instructionTiming[];
+extern u8 g_addressingModes[];
 extern u8 g_NesPalette[];
 
 extern void FindJumpDestinations(const u8* base, std::vector<u16>& branchDestinations);

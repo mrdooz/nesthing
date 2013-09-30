@@ -158,4 +158,21 @@ enum class OpCode : u8
     INC_ABS_X  = 0xfe
 };
 
+enum class AddressingMode
+{
+  IMPLIED = 0,
+  ACC,
+  ABS,
+  ABS_X,
+  ABS_Y,
+  IMM,
+  IND,
+  X_IND,
+  IND_Y,
+  REL,
+  ZPG,
+  ZPG_X,
+  ZPG_Y,
+};
+
 #endif

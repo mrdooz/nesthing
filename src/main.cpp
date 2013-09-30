@@ -424,7 +424,8 @@ u8 PPU::Read(u16 addr)
 
     // Reset vblank bit
     u8 tmp = m_status.reg;
-    m_status.vblank = 0;
+    // HACK
+    m_status.vblank = !m_status.vblank;
     return tmp;
   }
   else if (addr == 0x2007)
@@ -752,7 +753,7 @@ struct Cpu6502
   
   vector<u8> memory;
   
-  vector<PrgRom> prgRom;
+  vector<PrgRom> m_prgRom;
 
   size_t currentBank;
 
@@ -829,12 +830,17 @@ Cpu6502::Status Cpu6502::LoadINes(const char* filename)
   {
     PrgRom rom;
     memcpy(&rom.data[0], &base[i*romBankSize], romBankSize);
+    // TODO: Disassemble the bank pointed to by the reset vector
     // Just disassemble the last bank on init
-    if (i == numBanks - 1)
+    if (i == 0)
     {
-      Disassemble(&rom.data[0], rom.data.size(), 0xc000, &rom.disasm);
+      Disassemble(&rom.data[0], rom.data.size(), 0x8000, &rom.disasm);
     }
-    prgRom.emplace_back(rom);
+    else if (i == numBanks - 1)
+    {
+      Disassemble(&rom.data[0], rom.data.size(), 0xC000, &rom.disasm);
+    }
+    m_prgRom.emplace_back(rom);
   }
 
   // copy VROM banks
@@ -881,10 +887,11 @@ void Cpu6502::Reset()
 
   // For mapper 1, the first bank is loaded into $8000, and the
   // last bank info $c000
-  memcpy(&memory[0x8000], &prgRom[0].data[0], 16 * 1024);
-  memcpy(&memory[0xc000], &prgRom.back().data[0], 16 * 1024);
+  memcpy(&memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
+  memcpy(&memory[0xc000], &m_prgRom.back().data[0], 16 * 1024);
 
-  currentBank = prgRom.size() - 1;
+  currentBank = m_prgRom.size() - 1;
+  currentBank = 0;
 
   // Get the current interrupt table, and start executing the
   // reset interrupt
@@ -1024,12 +1031,75 @@ u8 Cpu6502::Pop8()
 
 u8 Cpu6502::SingleStep()
 {
+  u8 op8 = memory[regs.ip];
+  OpCode op = (OpCode)op8;
+  if (!g_validOpCodes[op8])
+  {
+    return op8;
+  }
+
+  // Load values depending on addressing mode
+  AddressingMode addrMode = (AddressingMode)g_addressingModes[op8];
+  u8 lo, hi;
+  u16 addr;
+  switch (addrMode)
+  {
+    case AddressingMode::ABS:
+      addr = memory[regs.ip+1] + (memory[regs.ip+2] << 8);
+      break;
+
+    case AddressingMode::ABS_X:
+      addr = memory[regs.ip+1] + (memory[regs.ip+2] << 8) + regs.x;
+      break;
+
+    case AddressingMode::ABS_Y:
+      addr = memory[regs.ip+1] + (memory[regs.ip+2] << 8) + regs.y;
+      break;
+
+    case AddressingMode::IMM:
+      lo = memory[regs.ip+1];
+      break;
+
+    case AddressingMode::ZPG:
+      addr = memory[regs.ip+1];
+      break;
+
+    case AddressingMode::ZPG_X:
+      addr = (memory[regs.ip+1] + regs.x) & 0xff;
+      break;
+
+    case AddressingMode::ZPG_Y:
+      addr = (memory[regs.ip+1] + regs.y) & 0xff;
+      break;
+
+    case AddressingMode::IND:
+      addr = memory[regs.ip+1] + (memory[regs.ip+2] << 8);
+      lo = ReadMemory(addr);
+      hi = ReadMemory(addr+1);
+      addr = lo + (hi << 8);
+      break;
+
+    case AddressingMode::X_IND:
+      addr = (memory[regs.ip+1] + regs.x) & 0xff;
+      lo = ReadMemory(addr);
+      hi = ReadMemory(addr+1);
+      addr = lo + (hi << 8);
+      break;
+
+    case AddressingMode::IND_Y:
+      addr = memory[regs.ip+1];
+      lo = ReadMemory(addr);
+      hi = ReadMemory(addr+1);
+      addr = lo + (hi << 8) + regs.y;
+      break;
+  }
+
+  /*
   u8 lo = memory[regs.ip+1];
   u8 hi = memory[regs.ip+2];
 
   auto GetAddr = [this]() { return memory[regs.ip+1] + (memory[regs.ip+2] << 8); };
-  OpCode op = (OpCode)memory[regs.ip];
-
+*/
   if (runUntilBranch && g_branchingOpCodes[(u8)op])
   {
     runUntilBranch = false;
@@ -1458,8 +1528,8 @@ void Cpu6502::RenderState(sf::RenderWindow& window)
 
   pos = sf::Vector2f(0, 20);
 
-  auto& rom = prgRom[currentBank];
-  u32 ofs = 0xc000;
+  auto& rom = m_prgRom[currentBank];
+  u32 ofs = 0x8000;
 
   // Look for the current IP in the disassemble block (ideally it should always be there..)
   typedef pair<u32, string> Val;
@@ -1541,7 +1611,12 @@ int main(int argc, const char * argv[])
   bool done = false;
   while (!done)
   {
-    window.clear();
+    tickCount++;
+
+    if (IsRunning() && ((tickCount % 20) == 0) || !IsRunning())
+    {
+      window.clear();
+    }
 
     sf::Event event;
     if ((IsRunning() && window.pollEvent(event)) || (!IsRunning() && window.waitEvent(event)))
@@ -1564,9 +1639,9 @@ int main(int argc, const char * argv[])
 
           case sf::Keyboard::D:
           {
-            if (!cpu.prgRom.empty())
+            if (!cpu.m_prgRom.empty())
             {
-              for (auto& d : cpu.prgRom[0].disasm)
+              for (auto& d : cpu.m_prgRom[0].disasm)
               {
                 printf("%.4x  %s\n", d.first, d.second.c_str());
               }
@@ -1704,8 +1779,13 @@ int main(int argc, const char * argv[])
         }
       }
     }
-    cpu.RenderState(window);
-    window.display();
+
+    if (IsRunning() && ((tickCount % 20) == 0) || !IsRunning())
+    {
+      cpu.RenderState(window);
+      window.display();
+    }
+
   }
 
   return 0;
