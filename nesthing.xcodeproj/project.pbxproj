@@ -14,6 +14,7 @@
 		764CAEBD17EEA59800A9837D /* sfml-system.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 764CAEBC17EEA59800A9837D /* sfml-system.framework */; };
 		764CAEBF17EEA5B000A9837D /* sfml-window.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 764CAEBE17EEA5B000A9837D /* sfml-window.framework */; };
 		764CAEC117EEA5EC00A9837D /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 764CAEC017EEA5EC00A9837D /* OpenGL.framework */; };
+		76F589DD17F3745F00CDCAF2 /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 76F589DC17F3745F00CDCAF2 /* CoreServices.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -32,15 +33,15 @@
 		762F640C17EEA4F0005ED514 /* SFML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SFML.framework; path = ../../../../Library/Frameworks/SFML.framework; sourceTree = "<group>"; };
 		7649967717EE0E2D00B9D8C3 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 2; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = src/main.cpp; sourceTree = SOURCE_ROOT; tabWidth = 2; };
 		7649967817EE0E2D00B9D8C3 /* nes_helpers.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = nes_helpers.cpp; path = src/nes_helpers.cpp; sourceTree = SOURCE_ROOT; };
-		7649967917EE0E2D00B9D8C3 /* nes_helpers.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = nes_helpers.h; path = src/nes_helpers.h; sourceTree = SOURCE_ROOT; };
+		7649967917EE0E2D00B9D8C3 /* nes_helpers.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = nes_helpers.hpp; path = src/nes_helpers.hpp; sourceTree = SOURCE_ROOT; };
 		7649967A17EE0E2D00B9D8C3 /* nesthing.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = nesthing.hpp; path = src/nesthing.hpp; sourceTree = SOURCE_ROOT; };
 		7649967B17EE0E2D00B9D8C3 /* opcodes.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = opcodes.hpp; path = src/opcodes.hpp; sourceTree = SOURCE_ROOT; };
 		764CAEBA17EEA57D00A9837D /* sfml-graphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "sfml-graphics.framework"; path = "../../../../Library/Frameworks/sfml-graphics.framework"; sourceTree = "<group>"; };
 		764CAEBC17EEA59800A9837D /* sfml-system.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "sfml-system.framework"; path = "../../../../Library/Frameworks/sfml-system.framework"; sourceTree = "<group>"; };
 		764CAEBE17EEA5B000A9837D /* sfml-window.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "sfml-window.framework"; path = "../../../../Library/Frameworks/sfml-window.framework"; sourceTree = "<group>"; };
 		764CAEC017EEA5EC00A9837D /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = System/Library/Frameworks/OpenGL.framework; sourceTree = SDKROOT; };
-		764CAEC217EEAAE400A9837D /* ComputerAmok.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ComputerAmok.ttf; sourceTree = "<group>"; };
 		766A650317EAB6D8008701A0 /* nesthing */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = nesthing; sourceTree = BUILT_PRODUCTS_DIR; };
+		76F589DC17F3745F00CDCAF2 /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = System/Library/Frameworks/CoreServices.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -48,6 +49,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				76F589DD17F3745F00CDCAF2 /* CoreServices.framework in Frameworks */,
 				764CAEC117EEA5EC00A9837D /* OpenGL.framework in Frameworks */,
 				764CAEBF17EEA5B000A9837D /* sfml-window.framework in Frameworks */,
 				764CAEBD17EEA59800A9837D /* sfml-system.framework in Frameworks */,
@@ -62,7 +64,7 @@
 		766A64FA17EAB6D8008701A0 = {
 			isa = PBXGroup;
 			children = (
-				764CAEC217EEAAE400A9837D /* ComputerAmok.ttf */,
+				76F589DC17F3745F00CDCAF2 /* CoreServices.framework */,
 				764CAEC017EEA5EC00A9837D /* OpenGL.framework */,
 				764CAEBE17EEA5B000A9837D /* sfml-window.framework */,
 				764CAEBC17EEA59800A9837D /* sfml-system.framework */,
@@ -86,7 +88,7 @@
 			children = (
 				7649967717EE0E2D00B9D8C3 /* main.cpp */,
 				7649967817EE0E2D00B9D8C3 /* nes_helpers.cpp */,
-				7649967917EE0E2D00B9D8C3 /* nes_helpers.h */,
+				7649967917EE0E2D00B9D8C3 /* nes_helpers.hpp */,
 				7649967A17EE0E2D00B9D8C3 /* nesthing.hpp */,
 				7649967B17EE0E2D00B9D8C3 /* opcodes.hpp */,
 			);
