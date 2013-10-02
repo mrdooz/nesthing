@@ -81,13 +81,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\src\cpu.cpp" />
     <ClCompile Include="..\src\main.cpp" />
+    <ClCompile Include="..\src\mmc1.cpp" />
     <ClCompile Include="..\src\nes_helpers.cpp" />
+    <ClCompile Include="..\src\ppu.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\src\cpu.hpp" />
+    <ClInclude Include="..\src\mmc1.hpp" />
     <ClInclude Include="..\src\nesthing.hpp" />
-    <ClInclude Include="..\src\nes_helpers.h" />
+    <ClInclude Include="..\src\nes_helpers.hpp" />
     <ClInclude Include="..\src\opcodes.hpp" />
+    <ClInclude Include="..\src\ppu.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

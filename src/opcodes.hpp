@@ -1,10 +1,10 @@
-#ifndef nesthing_opcodes_hpp
-#define nesthing_opcodes_hpp
+#pragma once
 
 #include "nesthing.hpp"
-
-enum class OpCode : u8
+namespace nes
 {
+  enum class OpCode : u8
+  {
     BRK        = 0x00,
     ORA_X_IND  = 0x01,
     ORA_ZPG    = 0x05,
@@ -156,23 +156,22 @@ enum class OpCode : u8
     SBC_ABS_Y  = 0xf9,
     SBC_ABS_X  = 0xfd,
     INC_ABS_X  = 0xfe
-};
+  };
 
-enum class AddressingMode
-{
-  IMPLIED = 0,
-  ACC,
-  ABS,
-  ABS_X,
-  ABS_Y,
-  IMM,
-  IND,
-  X_IND,
-  IND_Y,
-  REL,
-  ZPG,
-  ZPG_X,
-  ZPG_Y,
-};
-
-#endif
+  enum class AddressingMode
+  {
+    IMPLIED = 0,
+    ACC,
+    ABS,
+    ABS_X,
+    ABS_Y,
+    IMM,
+    IND,
+    X_IND,
+    IND_Y,
+    REL,
+    ZPG,
+    ZPG_X,
+    ZPG_Y,
+  };
+}
