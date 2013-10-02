@@ -97,13 +97,16 @@ struct PPU
 
   PPU();
   void Tick();
-  void Write(u16 addr, u8 value);
-  u8 Read(u16 addr);
+  void WriteMemory(u16 addr, u8 value);
+  u8 ReadMemory(u16 addr);
   void DumpVRom();
   void DumpTileBank(const u8* data, size_t numTiles);
   void ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* patternTable);
 
   void DrawScanline(sf::Image& image);
+
+  void SetControl1(u8 value);
+  void SetControl2(u8 value);
 
   union
   {
@@ -200,6 +203,12 @@ struct PPU
   };
   PatternTable m_patternTable[2];
 
+  u16 m_backgroundTableAddr;
+  u16 m_spriteTableAddr;
+  u16 m_nameTableAddr;
+  u8 m_backgroundTableIdx;
+  u8 m_spriteTableIdx;
+
   u16 m_curScanline;
   u16 m_curCycle;
   u8 m_memoryAccessCycle;
@@ -217,6 +226,11 @@ PPU::PPU()
   , m_evenFrame(true)
   , m_hscroll(0)
   , m_vscroll(0)
+  , m_backgroundTableAddr(0)
+  , m_spriteTableAddr(0)
+  , m_nameTableAddr(0x2000)
+  , m_backgroundTableIdx(0)
+  , m_spriteTableIdx(0)
   , m_curScanline(1)
   , m_curCycle(1)
   , m_memoryAccessCycle(0)
@@ -331,14 +345,14 @@ void PPU::DrawScanline(sf::Image& image)
   // 32x30 tiles (8x8)
   int tileY = m_curScanline / 8;
 
-  u8* nameTable = &m_memory[m_nameTable[0]];
-  u8* base = &m_memory[m_nameTable[0]];
+  u8* nameTable = &m_memory[m_nameTableAddr];
+//  u8* base = &m_memory[m_nameTableAddr];
   for (int i = 0; i < 32; ++i)
   {
     u8 sprite = nameTable[tileY*32+i];
     for (int j = 0; j < 8; ++j)
     {
-      u8 pixel = m_patternTable[0].sprites[sprite].data[(m_curScanline&7)*8+j];
+      u8 pixel = m_patternTable[m_backgroundTableIdx].sprites[sprite].data[(m_curScanline&7)*8+j];
       image.setPixel(i*32+j, m_curScanline, sf::Color(g_NesPalette[pixel*3+0], g_NesPalette[pixel*3+1], g_NesPalette[pixel*3+2]));
     }
   }
@@ -351,19 +365,58 @@ void PPU::DrawScanline(sf::Image& image)
   // Sprite
 }
 
-void PPU::Write(u16 addr, u8 value)
+void PPU::SetControl1(u8 value)
+{
+  m_control1.reg = value;
+  if (m_control1.backgroundPatterTableAddr)
+  {
+    m_backgroundTableAddr = 0x1000;
+    m_backgroundTableIdx = 1;
+  }
+  else
+  {
+    m_backgroundTableAddr = 0;
+    m_backgroundTableIdx = 0;
+  }
+
+  if (m_control1.spritePatternTableAddr)
+  {
+    m_spriteTableAddr = 0x1000;
+    m_spriteTableIdx = 1;
+  }
+  else
+  {
+    m_spriteTableAddr = 0;
+    m_spriteTableIdx = 0;
+  }
+
+  switch (m_control1.nameTableAddr)
+  {
+    case 0: m_nameTableAddr = 0x2000; break;
+    case 1: m_nameTableAddr = 0x2400; break;
+    case 2: m_nameTableAddr = 0x2800; break;
+    case 3: m_nameTableAddr = 0x2c00; break;
+  }
+}
+
+void PPU::SetControl2(u8 value)
+{
+  m_control2.reg = value;
+}
+
+void PPU::WriteMemory(u16 addr, u8 value)
 {
   // 0x2000 - 0x2007 is mirrored between 0x2008 -> 0x3fff
   switch (0x2000 + (addr & 0x7))
   {
     case 0x2000:
       // Control register 1 (PPUCTRL)
-      m_control1.reg = value;
+      SetControl1(value);
       break;
 
     case 0x2001:
       // Control register 2 (PPUMASK)
-      m_control2.reg = value;
+      SetControl2(value);
       break;
 
     case 0x2003:
@@ -413,7 +466,7 @@ void PPU::Write(u16 addr, u8 value)
   }
 }
 
-u8 PPU::Read(u16 addr)
+u8 PPU::ReadMemory(u16 addr)
 {
   if (addr == 0x2002)
   {
@@ -717,13 +770,13 @@ struct Cpu6502
   u8 SingleStep();
   void Reset();
   
-  void Transfer(s8* dst, s8* src);
-  void StoreRegister(s8* reg, s8 value);
-  void StoreAbsolute(u16 addr, u8 value);
+  void Transfer(u8* dst, u8* src);
+  void WriteRegisterAndFlags(u8* reg, u8 value);
+  void WriteMemory(u16 addr, u8 value);
   void LoadAbsolute(u16 addr, u8* reg);
   u8 ReadMemory(u16 addr);
   
-  void SetFlags(s8 value);
+  void SetFlags(u8 value);
 
   void RenderState(sf::RenderWindow& window);
   void RenderStack(sf::RenderWindow& window);
@@ -761,22 +814,21 @@ struct Cpu6502
   {
     u32 ip;
     u8 s;
-    s8 a, x, y;
+    u8 a, x, y;
   } regs;
 
   sf::Font font;
 
   size_t memoryOfs;
   size_t disasmOfs;
-  bool runUntilBranch;
 
+  InterruptVectors m_interruptVector;
 };
 
 Cpu6502::Cpu6502()
   : memory(64*1024)
   , currentBank(0)
   , disasmOfs(0)
-  , runUntilBranch(false)
   , memoryOfs(0)
 {
   memset(&m_flags, 0, sizeof(m_flags));
@@ -832,7 +884,7 @@ Cpu6502::Status Cpu6502::LoadINes(const char* filename)
     memcpy(&rom.data[0], &base[i*romBankSize], romBankSize);
     // TODO: Disassemble the bank pointed to by the reset vector
     // Just disassemble the last bank on init
-    if (i == 0)
+    if (i == 0 && numBanks > 1)
     {
       Disassemble(&rom.data[0], rom.data.size(), 0x8000, &rom.disasm);
     }
@@ -895,8 +947,8 @@ void Cpu6502::Reset()
 
   // Get the current interrupt table, and start executing the
   // reset interrupt
-  const InterruptVectors* v = (InterruptVectors*)&memory[0xfffa];
-  regs.ip = v->reset;
+  m_interruptVector = *(InterruptVectors*)&memory[0xfffa];
+  regs.ip = m_interruptVector.reset;
 }
 
 void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
@@ -925,12 +977,12 @@ void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
   SetFlags(*reg);
 }
 
-void Cpu6502::StoreAbsolute(u16 addr, u8 value)
+void Cpu6502::WriteMemory(u16 addr, u8 value)
 {
   if (addr >= 0x2000 && addr <= 0x3fff)
   {
     // Check for PPU writes
-    ppu.Write(addr, value);
+    ppu.WriteMemory(addr, value);
 
   }
   else if (addr >= 0x8000)
@@ -946,7 +998,7 @@ void Cpu6502::StoreAbsolute(u16 addr, u8 value)
         // Transfer 256 bytes to SPR-RAM
         for (size_t i = 0; i < 256; ++i)
         {
-          ppu.Write(0x2004, memory[0x100 * (u16)value + i]);
+          ppu.WriteMemory(0x2004, memory[0x100 * (u16)value + i]);
         }
         break;
 
@@ -963,7 +1015,7 @@ void Cpu6502::LoadAbsolute(u16 addr, u8* reg)
   u8 value;
   if (addr >= 0x2000 && addr <= 0x2007)
   {
-    value = ppu.Read(addr);
+    value = ppu.ReadMemory(addr);
     SetFlags(value);
     *reg = value;
   }
@@ -979,26 +1031,26 @@ u8 Cpu6502::ReadMemory(u16 addr)
 {
   if (addr >= 0x2000 && addr <= 0x2007)
   {
-    return ppu.Read(addr);
+    return ppu.ReadMemory(addr);
   }
 
   return memory[addr];
 }
 
-void Cpu6502::SetFlags(s8 value)
+void Cpu6502::SetFlags(u8 value)
 {
   m_flags.z = value == 0 ? 1 : 0;
-  m_flags.s = value < 0 ? 1 : 0;
+  m_flags.s = value & 0x80 ? 1 : 0;
 }
 
 
-void Cpu6502::Transfer(s8* dst, s8* src)
+void Cpu6502::Transfer(u8* dst, u8* src)
 {
   *dst = *src;
   SetFlags(*dst);
 }
 
-void Cpu6502::StoreRegister(s8* reg, s8 value)
+void Cpu6502::WriteRegisterAndFlags(u8* reg, u8 value)
 {
   *reg = value;
   SetFlags(value);
@@ -1035,13 +1087,14 @@ u8 Cpu6502::SingleStep()
   OpCode op = (OpCode)op8;
   if (!g_validOpCodes[op8])
   {
+    ++regs.ip;
     return op8;
   }
 
   // Load values depending on addressing mode
   AddressingMode addrMode = (AddressingMode)g_addressingModes[op8];
-  u8 lo, hi;
-  u16 addr;
+  u8 lo = 0, hi = 0;
+  u16 addr = 0;
   switch (addrMode)
   {
     case AddressingMode::ABS:
@@ -1092,60 +1145,139 @@ u8 Cpu6502::SingleStep()
       hi = ReadMemory(addr+1);
       addr = lo + (hi << 8) + regs.y;
       break;
+
+    case AddressingMode::REL:
+      lo = memory[regs.ip+1];
+      break;
+
+    case AddressingMode::IMPLIED:
+    case AddressingMode::ACC:
+      break;
   }
 
-  /*
-  u8 lo = memory[regs.ip+1];
-  u8 hi = memory[regs.ip+2];
-
-  auto GetAddr = [this]() { return memory[regs.ip+1] + (memory[regs.ip+2] << 8); };
-*/
-  if (runUntilBranch && g_branchingOpCodes[(u8)op])
-  {
-    runUntilBranch = false;
-    return 0;
-  }
-
-  int opLength = g_instrLength[(u8)op];
+  int opLength = g_instrLength[op8];
   bool ipUpdated = false;
   
   switch (op)
   {
+    case OpCode::BRK:
+      regs.ip = m_interruptVector.brk;
+      ipUpdated = true;
+      break;
+
     case OpCode::LSR_A:
     {
-      u8 lsb = regs.a & 1;
-      regs.a = (u8)regs.a >> 1;
-      m_flags.c = lsb;
+      m_flags.c = regs.a & 1 ? 1 : 0;
+      regs.a = regs.a >> 1;
+      m_flags.z = regs.a == 0 ? 1 : 0;
       break;
     }
 
+    case OpCode::LSR_ABS:
+    case OpCode::LSR_ABS_X:
+    case OpCode::LSR_ZPG:
+    case OpCode::LSR_ZPG_X:
+    {
+      u8 t = ReadMemory(addr);
+      m_flags.c = t & 1;
+      t = t >> 1;
+      WriteMemory(addr, t);
+      break;
+    }
+
+    case OpCode::ASL_A:
+    {
+      m_flags.c = (regs.a & 0x80) ? 1 : 0;
+      regs.a = regs.a << 1;
+      m_flags.z = regs.a == 0 ? 1 : 0;
+      break;
+    }
+
+    case OpCode::ASL_ABS:
+    case OpCode::ASL_ABS_X:
+    case OpCode::ASL_ZPG:
+    case OpCode::ASL_ZPG_X:
+    {
+      u8 t = ReadMemory(addr);
+      m_flags.c = (t & 0x80) ? 1 : 0;
+      t = t << 1;
+      WriteMemory(addr, t);
+      break;
+    }
+
+    case OpCode::AND_ABS:
+    case OpCode::AND_ABS_X:
+    case OpCode::AND_ABS_Y:
+    case OpCode::AND_ZPG:
+    case OpCode::AND_ZPG_X:
+    case OpCode::AND_X_IND:
+    case OpCode::AND_IND_Y:
+      lo = ReadMemory(addr);
     case OpCode::AND_IMM:
-    {
-      DoBinOp(BinOp::AND, &regs.a, (s8)lo);
+      DoBinOp(BinOp::AND, (s8*)&regs.a, (s8)lo);
       break;
-    }
 
+    case OpCode::ORA_ABS:
+    case OpCode::ORA_ABS_X:
+    case OpCode::ORA_ABS_Y:
+    case OpCode::ORA_ZPG:
+    case OpCode::ORA_ZPG_X:
+    case OpCode::ORA_X_IND:
+    case OpCode::ORA_IND_Y:
+      lo = ReadMemory(addr);
     case OpCode::ORA_IMM:
-    {
-      DoBinOp(BinOp::OR, &regs.a, (s8)lo);
+      DoBinOp(BinOp::OR, (s8*)&regs.a, (s8)lo);
       break;
-    }
 
+    case OpCode::EOR_ABS:
+    case OpCode::EOR_ABS_X:
+    case OpCode::EOR_ABS_Y:
+    case OpCode::EOR_ZPG:
+    case OpCode::EOR_ZPG_X:
+    case OpCode::EOR_X_IND:
+    case OpCode::EOR_IND_Y:
+      lo = ReadMemory(addr);
     case OpCode::EOR_IMM:
-    {
-      DoBinOp(BinOp::XOR, &regs.a, (s8)lo);
+      DoBinOp(BinOp::XOR, (s8*)&regs.a, (s8)lo);
       break;
-    }
 
     case OpCode::CLD:
-    {
       m_flags.d = 0;
       break;
-    }
-      
+
+    case OpCode::CLV:
+      m_flags.v = 0;
+      break;
+
+    case OpCode::CLI:
+      m_flags.i = 1;
+      break;
+
     case OpCode::SEI:
-    {
       m_flags.i  = 0;
+      break;
+
+    case OpCode::CLC:
+      m_flags.c = 0;
+      break;
+
+    case OpCode::SEC:
+      m_flags.c = 1;
+      break;
+
+    case OpCode::ADC_ABS:
+    case OpCode::ADC_ABS_X:
+    case OpCode::ADC_ABS_Y:
+    case OpCode::ADC_IND_Y:
+    case OpCode::ADC_X_IND:
+    case OpCode::ADC_ZPG:
+    case OpCode::ADC_ZPG_X:
+      lo = ReadMemory(addr);
+    case OpCode::ADC_IMM:
+    {
+      s16 res = (s8)lo + (s8)regs.a;
+      WriteRegisterAndFlags(&regs.a, (u8)res);
+      m_flags.v = res > 127 || res < -128 ? 1 : 0;
       break;
     }
 
@@ -1153,219 +1285,141 @@ u8 Cpu6502::SingleStep()
     case OpCode::BIT_ABS:
     {
       // A and M. M7 -> flags.s, m6 -> flags.v
-      u8 m = ReadMemory(op == OpCode::BIT_ZPG ? lo : GetAddr());
-      u8 res = regs.a & m;
-      m_flags.z = res == 0;
-      m_flags.v = (m & 0x40) == 0x40;
-      m_flags.s = (m & 0x80) == 0x80;
+      u8 m = ReadMemory(addr);
+      u8 res = (u8)regs.a & m;
+      m_flags.z = res == 0 ? 1 : 0;
+      m_flags.v = (m & 0x40) == 0x40 ? 1 : 0;
+      m_flags.s = (m & 0x80) == 0x80 ? 1 : 0;
+      break;
+    }
+
+    case OpCode::DEC_ABS:
+    case OpCode::DEC_ABS_X:
+    case OpCode::DEC_ZPG:
+    case OpCode::DEC_ZPG_X:
+    {
+      u8 tmp = ReadMemory(addr);
+      --tmp;
+      SetFlags(tmp);
+      WriteMemory(addr, tmp);
       break;
     }
 
     case OpCode::DEX:
-    {
-      StoreRegister(&regs.x, regs.x - 1);
-      SetFlags(regs.x);
+      WriteRegisterAndFlags(&regs.x, regs.x - 1);
       break;
-    }
 
     case OpCode::DEY:
-    {
-      StoreRegister(&regs.y, regs.y - 1);
-      SetFlags(regs.y);
+      WriteRegisterAndFlags(&regs.y, regs.y - 1);
       break;
-    }
+
 
     case OpCode::INC_ABS:
-    {
-      u8 tmp = memory[GetAddr()] + 1;
-      StoreAbsolute(GetAddr(), tmp);
-      SetFlags(tmp);
-      break;
-    }
-
-    case OpCode::INC_ZPG:
-    {
-      u8 tmp = memory[lo] + 1;
-      StoreAbsolute(lo, tmp);
-      SetFlags(tmp);
-      break;
-    }
-
     case OpCode::INC_ABS_X:
-    {
-      u8 tmp = memory[(u16)(GetAddr()+regs.x)] + 1;
-      StoreAbsolute(GetAddr(), tmp);
-      SetFlags(tmp);
-      break;
-    }
-
+    case OpCode::INC_ZPG:
     case OpCode::INC_ZPG_X:
     {
-      u8 tmp = memory[(u8)(lo+regs.x)] + 1;
-      StoreAbsolute(lo, tmp);
+      u8 tmp = ReadMemory(addr);
+      ++tmp;
       SetFlags(tmp);
+      WriteMemory(addr, tmp);
       break;
     }
 
     case OpCode::INX:
-    {
-      regs.x++;
-      SetFlags(regs.x);
+      WriteRegisterAndFlags(&regs.x, regs.x + 1);
       break;
-    }
 
     case OpCode::INY:
-    {
-      regs.y++;
-      SetFlags(regs.y);
+      WriteRegisterAndFlags(&regs.y, regs.y + 1);
       break;
-    }
 
     //////////////////////////////////////////////////////////////////////////
     // Transfer
     //////////////////////////////////////////////////////////////////////////
     case OpCode::TAX:
-    {
       Transfer(&regs.x, &regs.a);
       break;
-    }
 
     case OpCode::TAY:
-    {
       Transfer(&regs.y, &regs.a);
       break;
-    }
 
     case OpCode::TSX:
-    {
-      Transfer(&regs.x, (s8*)&regs.s);
+      Transfer(&regs.x, &regs.s);
       break;
-    }
 
     case OpCode::TXS:
-    {
-      Transfer((s8*)&regs.s, &regs.x);
+      Transfer(&regs.s, &regs.x);
       break;
-    }
 
     case OpCode::TXA:
-    {
       Transfer(&regs.a, &regs.x);
       break;
-    }
 
     case OpCode::TYA:
-    {
       Transfer(&regs.a, &regs.y);
       break;
-    }
 
     //////////////////////////////////////////////////////////////////////////
     // Store
     //////////////////////////////////////////////////////////////////////////
     case OpCode::STA_ABS:
-    {
-      StoreAbsolute(GetAddr(), regs.a);
+    case OpCode::STA_ABS_X:
+    case OpCode::STA_ABS_Y:
+    case OpCode::STA_ZPG:
+    case OpCode::STA_ZPG_X:
+    case OpCode::STA_X_IND:
+    case OpCode::STA_IND_Y:
+      WriteMemory(addr, (u8)regs.a);
       break;
-    }
 
     case OpCode::STX_ABS:
-    {
-      StoreAbsolute(GetAddr(), regs.x);
+    case OpCode::STX_ZPG:
+    case OpCode::STX_ZPG_Y:
+      WriteMemory(addr, (u8)regs.x);
       break;
-    }
 
     case OpCode::STY_ABS:
-    {
-      StoreAbsolute(GetAddr(), regs.y);
+    case OpCode::STY_ZPG:
+    case OpCode::STY_ZPG_X:
+      WriteMemory(addr, (u8)regs.y);
       break;
-    }
 
     //////////////////////////////////////////////////////////////////////////
     // Load
     //////////////////////////////////////////////////////////////////////////
-    case OpCode::LDA_IMM:
-    {
-      StoreRegister(&regs.a, (s8)lo);
-      break;
-    }
-
-    case OpCode::LDA_ZPG:
-    {
-      StoreRegister(&regs.a, (s8)memory[lo]);
-      break;
-    }
-
-    case OpCode::LDA_ZPG_X:
-    {
-      StoreRegister(&regs.a, (s8)memory[(u8)(lo+regs.x)]);
-      break;
-    }
-
     case OpCode::LDA_ABS:
-    {
-      LoadAbsolute(GetAddr(), (u8*)&regs.a);
-      break;
-    }
-
     case OpCode::LDA_ABS_X:
-    {
-      LoadAbsolute((u16)(GetAddr()+regs.x), (u8*)&regs.a);
-      break;
-    }
-
     case OpCode::LDA_ABS_Y:
-    {
-      LoadAbsolute((u16)(GetAddr()+regs.y), (u8*)&regs.a);
+    case OpCode::LDA_ZPG:
+    case OpCode::LDA_ZPG_X:
+    case OpCode::LDA_X_IND:
+    case OpCode::LDA_IND_Y:
+      lo = ReadMemory(addr);
+    case OpCode::LDA_IMM:
+      WriteRegisterAndFlags(&regs.a, lo);
       break;
-    }
-
-    // add indirect loads
-
-    case OpCode::LDX_IMM:
-    {
-      StoreRegister(&regs.x, (s8)lo);
-      break;
-    }
 
     case OpCode::LDX_ABS:
-    {
-      LoadAbsolute(GetAddr(), (u8*)&regs.x);
-      break;
-    }
-
     case OpCode::LDX_ABS_Y:
-    {
-      LoadAbsolute((u16)(GetAddr()+regs.y), (u8*)&regs.x);
-      break;
-    }
-
     case OpCode::LDX_ZPG:
-    {
-      StoreRegister(&regs.x, (s8)memory[lo]);
-      break;
-    }
-
     case OpCode::LDX_ZPG_Y:
-    {
-      StoreRegister(&regs.x, (s8)memory[(u8)(lo+regs.y)]);
+      lo = ReadMemory(addr);
+    case OpCode::LDX_IMM:
+      WriteRegisterAndFlags(&regs.x, lo);
       break;
-    }
-
-    case OpCode::LDY_IMM:
-    {
-      StoreRegister(&regs.y, (s8)lo);
-      break;
-    }
-
 
     case OpCode::LDY_ABS:
-    {
-      LoadAbsolute(GetAddr(), (u8*)&regs.y);
+    case OpCode::LDY_ABS_X:
+    case OpCode::LDY_ZPG:
+    case OpCode::LDY_ZPG_X:
+      lo = ReadMemory(addr);
+    case OpCode::LDY_IMM:
+      WriteRegisterAndFlags(&regs.y, lo);
       break;
-    }
 
-    //////////////////////////////////////////////////////////////////////////
+      //////////////////////////////////////////////////////////////////////////
     // Stack instructions
     //////////////////////////////////////////////////////////////////////////
     case OpCode::PHA:
@@ -1380,47 +1434,108 @@ u8 Cpu6502::SingleStep()
       break;
     }
 
-    //////////////////////////////////////////////////////////////////////////
+    case OpCode::CMP_ABS:
+    case OpCode::CMP_ABS_X:
+    case OpCode::CMP_ABS_Y:
+    case OpCode::CMP_X_IND:
+    case OpCode::CMP_IND_Y:
+    case OpCode::CMP_ZPG:
+    case OpCode::CMP_ZPG_X:
+      lo = ReadMemory(addr);
+    case OpCode::CMP_IMM:
+      m_flags.z = lo == (u8)regs.a ? 1 : 0;
+      m_flags.s = (regs.a & 0x80) == 0x80 ? 1 : 0;
+      m_flags.c = regs.a >= lo ? 1 : 0;
+      break;
+
+    case OpCode::CPX_ABS:
+    case OpCode::CPX_ZPG:
+      lo = ReadMemory(addr);
+    case OpCode::CPX_IMM:
+      m_flags.z = lo == (u8)regs.x ? 1 : 0;
+      m_flags.s = (regs.x & 0x80) == 0x80 ? 1 : 0;
+      m_flags.c = regs.x >= lo ? 1 : 0;
+      break;
+
+    case OpCode::CPY_ABS:
+    case OpCode::CPY_ZPG:
+      lo = ReadMemory(addr);
+    case OpCode::CPY_IMM:
+      m_flags.z = lo == (u8)regs.y ? 1 : 0;
+      m_flags.s = (regs.y & 0x80) == 0x80 ? 1 : 0;
+      m_flags.c = regs.y >= lo ? 1 : 0;
+      break;
+
+
+      //////////////////////////////////////////////////////////////////////////
     // Branching instructions
     //////////////////////////////////////////////////////////////////////////
 
-#define BRANCH_ON_FLAG(f)   \
-if (!m_flags.f) {             \
-  regs.ip += (s8)lo;        \
+#define BRANCH_FLAG_NOT_SET(f)   \
+if (!m_flags.f) {                \
+  regs.ip += (s8)lo;             \
+}
+
+#define BRANCH_FLAG_SET(f)       \
+if (m_flags.f) {                 \
+  regs.ip += (s8)lo;             \
 }
 
     case OpCode::BPL_REL:
-      BRANCH_ON_FLAG(s);
+      BRANCH_FLAG_NOT_SET(s);
+      break;
+
+    case OpCode::BMI_REL:
+      BRANCH_FLAG_SET(s);
+      break;
+
+    case OpCode::BVC_REL:
+      BRANCH_FLAG_NOT_SET(v);
+      break;
+
+    case OpCode::BVS_REL:
+      BRANCH_FLAG_SET(v);
+      break;
+
+    case OpCode::BCC_REL:
+      BRANCH_FLAG_NOT_SET(c);
+      break;
+
+    case OpCode::BCS_REL:
+      BRANCH_FLAG_SET(c);
       break;
 
     case OpCode::BNE_REL:
-      BRANCH_ON_FLAG(z);
+      BRANCH_FLAG_NOT_SET(z);
+      break;
+
+    case OpCode::BEQ_REL:
+      BRANCH_FLAG_SET(z);
+      break;
+
+    case OpCode::JMP_IND:
+      regs.ip = ReadMemory(addr) + (ReadMemory(addr+1) << 8);
       break;
 
     case OpCode::JMP_ABS:
-    {
-      regs.ip = GetAddr();
+      regs.ip = addr;
       ipUpdated = true;
       break;
-    }
 
     case OpCode::JSR_ABS:
-    {
       // push the return address on the stack
       Push16(regs.ip + opLength);
-      regs.ip = GetAddr();
+      regs.ip = addr;
       ipUpdated = true;
       break;
-    }
 
     case OpCode::RTS:
-    {
       regs.ip = Pop16();
       ipUpdated = true;
       break;
-    }
 
     default:
+      assert("IMPLEMENT ME!");
       break;
   }
 
@@ -1613,7 +1728,7 @@ int main(int argc, const char * argv[])
   {
     tickCount++;
 
-    if (IsRunning() && ((tickCount % 20) == 0) || !IsRunning())
+    if ((IsRunning() && ((tickCount % 20) == 0)) || !IsRunning())
     {
       window.clear();
     }
@@ -1780,7 +1895,7 @@ int main(int argc, const char * argv[])
       }
     }
 
-    if (IsRunning() && ((tickCount % 20) == 0) || !IsRunning())
+    if ((IsRunning() && ((tickCount % 20) == 0)) || !IsRunning())
     {
       cpu.RenderState(window);
       window.display();
