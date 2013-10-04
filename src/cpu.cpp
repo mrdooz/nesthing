@@ -24,6 +24,17 @@ OpCode Cpu6502::PeekOp()
   return (OpCode)memory[regs.ip];
 }
 
+void Cpu6502::ExecuteNmi()
+{
+  u16 t = regs.ip;
+  regs.ip = m_interruptVector.nmi;
+  while (PeekOp() != OpCode::RTI)
+  {
+    SingleStep();
+  }
+  regs.ip = t;
+}
+
 void Cpu6502::Tick()
 {
   SingleStep();
@@ -271,42 +282,79 @@ u8 Cpu6502::SingleStep()
     break;
 
   case OpCode::LSR_A:
-    {
-      m_flags.c = regs.a & 1 ? 1 : 0;
-      regs.a = regs.a >> 1;
-      m_flags.z = regs.a == 0 ? 1 : 0;
-      break;
-    }
-
   case OpCode::LSR_ABS:
   case OpCode::LSR_ABS_X:
   case OpCode::LSR_ZPG:
   case OpCode::LSR_ZPG_X:
     {
-      u8 t = ReadMemory(addr);
+      u8 t = op == OpCode::LSR_A ? regs.a : ReadMemory(addr);
       m_flags.c = t & 1;
       t = t >> 1;
-      WriteMemory(addr, t);
+      if (op == OpCode::LSR_A)
+        regs.a = t;
+      else
+        WriteMemory(addr, t);
+      SetFlags(t);
+      break;
+    }
+
+    {
+      m_flags.c = (regs.a & 0x80) ? 1 : 0;
+      regs.a = regs.a << 1;
+      SetFlags(regs.a);
       break;
     }
 
   case OpCode::ASL_A:
-    {
-      m_flags.c = (regs.a & 0x80) ? 1 : 0;
-      regs.a = regs.a << 1;
-      m_flags.z = regs.a == 0 ? 1 : 0;
-      break;
-    }
-
   case OpCode::ASL_ABS:
   case OpCode::ASL_ABS_X:
   case OpCode::ASL_ZPG:
   case OpCode::ASL_ZPG_X:
     {
-      u8 t = ReadMemory(addr);
+      u8 t = op == OpCode::ASL_A ? regs.a : ReadMemory(addr);
       m_flags.c = (t & 0x80) ? 1 : 0;
       t = t << 1;
-      WriteMemory(addr, t);
+      if (op == OpCode::ASL_A)
+        regs.a = t;
+      else
+        WriteMemory(addr, t);
+      SetFlags(t);
+      break;
+    }
+
+  case OpCode::ROL_A:
+  case OpCode::ROL_ABS:
+  case OpCode::ROL_ABS_X:
+  case OpCode::ROL_ZPG:
+  case OpCode::ROL_ZPG_X:
+    {
+      u8 t = op == OpCode::ROL_A ? regs.a : ReadMemory(addr);
+      u8 c = m_flags.c;
+      m_flags.c = (t & 0x80) ? 1 : 0;
+      t = (t << 1) + (c ? 1 : 0);
+      if (op == OpCode::ROL_A)
+        regs.a = t;
+      else
+        WriteMemory(addr, t);
+      SetFlags(t);
+      break;
+    }
+
+  case OpCode::ROR_A:
+  case OpCode::ROR_ABS:
+  case OpCode::ROR_ABS_X:
+  case OpCode::ROR_ZPG:
+  case OpCode::ROR_ZPG_X:
+    {
+      u8 t = op == OpCode::ROL_A ? regs.a : ReadMemory(addr);
+      u8 c = m_flags.c;
+      m_flags.c = (t & 0x1) ? 1 : 0;
+      t = (t >> 1) + (c ? 0x80 : 0);
+      if (op == OpCode::ROL_A)
+        regs.a = t;
+      else
+        WriteMemory(addr, t);
+      SetFlags(t);
       break;
     }
 
@@ -370,6 +418,23 @@ u8 Cpu6502::SingleStep()
     m_flags.c = 1;
     break;
 
+  case OpCode::SBC_ABS:
+  case OpCode::SBC_ABS_X:
+  case OpCode::SBC_ABS_Y:
+  case OpCode::SBC_IND_Y:
+  case OpCode::SBC_X_IND:
+  case OpCode::SBC_ZPG:
+  case OpCode::SBC_ZPG_X:
+    lo = ReadMemory(addr);
+  case OpCode::SBC_IMM:
+    {
+      s16 res = (s8)regs.a - (s8)lo - (1 - m_flags.c);
+      WriteRegisterAndFlags(&regs.a, (u8)res);
+      m_flags.v = res > 127 || res < -128 ? 1 : 0;
+      m_flags.c = res > 0 && res < 255;
+      break;
+    }
+
   case OpCode::ADC_ABS:
   case OpCode::ADC_ABS_X:
   case OpCode::ADC_ABS_Y:
@@ -380,9 +445,10 @@ u8 Cpu6502::SingleStep()
     lo = ReadMemory(addr);
   case OpCode::ADC_IMM:
     {
-      s16 res = (s8)lo + (s8)regs.a;
+      s16 res = (s8)lo + (s8)regs.a + m_flags.c;
       WriteRegisterAndFlags(&regs.a, (u8)res);
       m_flags.v = res > 127 || res < -128 ? 1 : 0;
+      m_flags.c = res > 255;
       break;
     }
 
@@ -571,7 +637,6 @@ u8 Cpu6502::SingleStep()
     m_flags.c = regs.y >= lo ? 1 : 0;
     break;
 
-
     //////////////////////////////////////////////////////////////////////////
     // Branching instructions
     //////////////////////////////////////////////////////////////////////////
@@ -619,7 +684,8 @@ u8 Cpu6502::SingleStep()
     break;
 
   case OpCode::JMP_IND:
-    regs.ip = ReadMemory(addr) + (ReadMemory(addr+1) << 8);
+    regs.ip = addr;
+    ipUpdated = true;
     break;
 
   case OpCode::JMP_ABS:
@@ -628,15 +694,21 @@ u8 Cpu6502::SingleStep()
     break;
 
   case OpCode::JSR_ABS:
-    // push the return address on the stack
-    Push16(regs.ip + opLength);
+    // push the return address - 1 on the stack
+    Push16(regs.ip + opLength - 1);
     regs.ip = addr;
     ipUpdated = true;
     break;
 
+  case OpCode::RTI:
+    break;
+
   case OpCode::RTS:
-    regs.ip = Pop16();
+    regs.ip = Pop16() + 1;
     ipUpdated = true;
+    break;
+
+  case OpCode::NOP:
     break;
 
   default:
@@ -666,8 +738,9 @@ void Cpu6502::RenderMemory(sf::RenderWindow& window, u16 ofs)
     char buf[128];
     sprintf(buf, "%.4x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x",
       ofs + i * 16,
-      *p++, *p++, *p++, *p++, *p++, *p++, *p++, *p++,
-      *p++, *p++, *p++, *p++, *p++, *p++, *p++, *p++);
+      p[0x0], p[0x1], p[0x2], p[0x3], p[0x4], p[0x5], p[0x6], p[0x7], 
+      p[0x8], p[0x9], p[0xa], p[0xb], p[0xc], p[0xd], p[0xe], p[0xf]);
+    p += 16;
     text.setString(buf);
     text.setPosition(pos);
     window.draw(text);
@@ -762,7 +835,9 @@ void Cpu6502::RenderState(sf::RenderWindow& window)
   int rowHeight = 15;
   int rowWidth = 300;
 
-  currentRect.setFillColor(sf::Color::Cyan);
+  currentRect.setFillColor(Color::Transparent);
+  currentRect.setOutlineColor(Color::Yellow);
+  currentRect.setOutlineThickness(1);
   currentRect.setSize(sf::Vector2f(rowWidth, rowHeight));
 
   if (it != rom.disasm.end())
@@ -800,10 +875,9 @@ void Cpu6502::RenderState(sf::RenderWindow& window)
         text.setColor(curIp == regs.ip ? sf::Color::Yellow : sf::Color::White);
       }
 
-
-      window.draw(currentRect);
+      //window.draw(currentRect);
       window.draw(text);
-      pos.y += 15;
+      pos.y += rowHeight;
     }
   }
 

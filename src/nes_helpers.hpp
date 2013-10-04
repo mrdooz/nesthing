@@ -117,5 +117,11 @@ namespace nes
   extern u8 g_addressingModes[];
   extern u8 g_NesPalette[];
 
+#ifdef _WIN32
+void LogConsole(char const * const format, ... );
+#define LOG(...) LogConsole(__VA_ARGS__);
+#else
+#define LOG(...) printf(__VA_ARGS__);
+#endif
 
 }

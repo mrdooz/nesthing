@@ -1,11 +1,46 @@
 #include "nes_helpers.hpp"
 #include <iostream>
+#include <stdarg.h>
 
 #include "cpu.hpp"
 #include "ppu.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace nes
 {
+
+#ifdef _WIN32
+  string ToString(char const * const format, ... ) 
+  {
+    va_list arg;
+    va_start(arg, format);
+
+    const int len = _vscprintf(format, arg) + 1;
+
+    char* buf = (char*)_alloca(len);
+    vsprintf_s(buf, len, format, arg);
+    va_end(arg);
+
+    return string(buf);
+  }
+#endif
+  void LogConsole(char const * const format, ... )
+  {
+    va_list arg;
+    va_start(arg, format);
+
+    const int len = _vscprintf(format, arg) + 1;
+
+    char* buf = (char*)_alloca(len);
+    vsprintf_s(buf, len, format, arg);
+    va_end(arg);
+
+    OutputDebugStringA(buf);
+  }
+
   Status LoadINes(const char* filename, Cpu6502* cpu, PPU* ppu)
   {
     FILE* f = fopen(filename, "rb");
@@ -29,7 +64,7 @@ namespace nes
 
     if (header->flags6.mapperLowNibble != 1 && header->flags6.mapperLowNibble != 0)
     {
-      printf("Only mapper 0 and 1 is supported\n");
+      LOG("Only mapper 0 and 1 is supported\n");
       return Status::INVALID_MAPPER_VERSION;
     }
 
@@ -81,25 +116,25 @@ namespace nes
 
   void DumpHeader1(const INesHeader1* header)
   {
-    printf("Header1\n");
-    printf("mapper: %.2x\n", (header->flags7.mapperHiNibble << 4) + header->flags6.mapperLowNibble);
+    LOG("Header1\n");
+    LOG("mapper: %.2x\n", (header->flags7.mapperHiNibble << 4) + header->flags6.mapperLowNibble);
   }
 
   void DumpHeader2(const INesHeader2* header)
   {
     // If in ines 2.0 format, ignore hiNibble, because DiskDude! might have overwritten it!
-    printf("Header2\n");
-    printf("mapper: %.2x\n", header->flags6.mapperLowNibble);
+    LOG("Header2\n");
+    LOG("mapper: %.2x\n", header->flags6.mapperLowNibble);
   }
 
   void DumpHeader(const INesHeaderCommon* header)
   {
-    printf("%c%c%c\n", header->id[0], header->id[1], header->id[2]);
-    printf("ROM banks: %d, VROM banks: %d\n", header->numRomBanks, header->numVRomBanks);
-    printf("flags6: %s mirroring, battery: %d, trainer: %d, 4 screen: %d\n",
+    LOG("%c%c%c\n", header->id[0], header->id[1], header->id[2]);
+    LOG("ROM banks: %d, VROM banks: %d\n", header->numRomBanks, header->numVRomBanks);
+    LOG("flags6: %s mirroring, battery: %d, trainer: %d, 4 screen: %d\n",
       header->flags6.verticalMirroring ? "v" : "h", header->flags6.batteryBacked,
       header->flags6.trainer, header->flags6.fourScreenVraw);
-    printf("flags7: vs system: %d\n",
+    LOG("flags7: vs system: %d\n",
       header->flags7.vsSystem);
   }
 

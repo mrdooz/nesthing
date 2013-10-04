@@ -30,8 +30,7 @@ namespace nes
     void WriteMemory(u16 addr, u8 value);
     u8 ReadMemory(u16 addr);
     void DumpVRom();
-    void DumpTileBank(const u8* data, size_t numTiles);
-    void ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* patternTable);
+    void ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* patternTable, Image* image);
 
     void DrawScanline(sf::Image& image);
 

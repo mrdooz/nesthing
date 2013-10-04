@@ -34,6 +34,7 @@ namespace nes
     Cpu6502(PPU* ppu, MMC1* mmc1);
 
     void Tick();
+    void ExecuteNmi();
 
     void SetIp(u32 v);
     u8 SingleStep();

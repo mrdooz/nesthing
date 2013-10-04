@@ -300,8 +300,11 @@ void PPU::WriteMemory(u16 addr, u8 value)
   case 0x2007:
     // Note, this should only be done during vblank or when rendering is disabled
     // Video RAM I/O register
-    m_memory[m_writeAddr] = value;
-    m_writeAddr += m_control1.ppuAddressIncr ? 32 : 1;
+    if (m_writeAddr < m_memory.size())
+    {
+      m_memory[m_writeAddr] = value;
+      m_writeAddr += m_control1.ppuAddressIncr ? 32 : 1;
+    }
     break;
   }
 }
@@ -329,7 +332,7 @@ u8 PPU::ReadMemory(u16 addr)
   return 0;
 }
 
-void PPU::ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* patternTable)
+void PPU::ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* patternTable, Image* image)
 {
   // dump a tile bank
   for (size_t i = 0; i < numTiles; ++i)
@@ -358,53 +361,19 @@ void PPU::ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* pat
       }
     }
 
-    for (size_t j = 0; j < 8; ++j)
-    {
-      for (size_t k = 0; k < 8; ++k)
-      {
-        u8 c = tile[j*8+k];
-        printf("%c", c == 0 ? '.' : '0' + c);
-      }
-      printf("\n");
-    }
-    printf("\n");
-  }
-}
-
-
-void PPU::DumpTileBank(const u8* data, size_t numTiles)
-{
-  // dump a tile bank
-  for (size_t i = 0; i < numTiles; ++i)
-  {
-    // each tile is 16 bytes (8 per layer)
-    u8 layer0[8];
-    u8 layer1[8];
-    memcpy(layer0, &data[i*16+0], 8);
-    memcpy(layer1, &data[i*16+8], 8);
-
-    // combine layers
-    vector<u8> tile(256);
-    for (size_t j = 0; j < 8; ++j)
-    {
-      u8 v = layer0[j];
-      for (size_t k = 0; k < 8; ++k)
-      {
-        tile[j*8+k] = (v >> (7 - k)) & 1;
-      }
-
-      v = layer1[j];
-      for (size_t k = 0; k < 8; ++k)
-      {
-        tile[j*8+k] |= ((v >> (7 - k)) & 1) << 1;
-      }
-    }
+    int x = numTiles % 16;
+    int y = numTiles / 16;
 
     for (size_t j = 0; j < 8; ++j)
     {
       for (size_t k = 0; k < 8; ++k)
       {
         u8 c = tile[j*8+k];
+        if (image)
+        {
+          image->setPixel(x+k, y+j, Color(g_NesPalette[c*3+0], g_NesPalette[c*3+1], g_NesPalette[c*3+2]));
+        }
+
         printf("%c", c == 0 ? '.' : '0' + c);
       }
       printf("\n");
@@ -415,6 +384,10 @@ void PPU::DumpTileBank(const u8* data, size_t numTiles)
 
 void PPU::DumpVRom()
 {
-  ProcessPatternTable(&m_memory[0], 256, &m_patternTable[0]);
-  ProcessPatternTable(&m_memory[256*16], 256, &m_patternTable[1]);
+  Image image;
+  image.create(16*8, 16*8);
+  ProcessPatternTable(&m_memory[0], 256, &m_patternTable[0], &image);
+  image.saveToFile("c:/temp/pattern_table0.png");
+  ProcessPatternTable(&m_memory[256*16], 256, &m_patternTable[1], &image);
+  image.saveToFile("c:/temp/pattern_table1.png");
 }

@@ -39,12 +39,24 @@ namespace nes
 
 int main(int argc, const char * argv[])
 {
+
+  {
+    u8 x4 = 4;
+    u8 sx4 = 252;
+    s8 ssx4 = (s8)sx4;
+    u8 x6 = 6;
+    u8 sx6 = 246;
+    s8 ssx6 = (s8)sx6;
+    int a = 10;
+
+  }
+
   ifstream str("nesthing.brk");
 
   u16 x;
   while (str >> hex >> x)
   {
-    cpu.m_breakpoints.insert(x);
+    //cpu.m_breakpoints.insert(x);
   }
   
   // Create the main window
@@ -125,7 +137,7 @@ int main(int argc, const char * argv[])
             break;
           }
 
-          case sf::Keyboard::Y:
+          case sf::Keyboard::S:
           {
             for (size_t i = 0; i < 30*8; ++i)
             {
@@ -146,13 +158,18 @@ int main(int argc, const char * argv[])
             break;
           }
 
+          case sf::Keyboard::Z:
+            cpu.m_flags.z ^= cpu.m_flags.z;
+            break;
+
           case sf::Keyboard::R:
           {
             cpu.Reset();
             break;
           }
 
-          case sf::Keyboard::S:
+          case sf::Keyboard::F11:
+          case sf::Keyboard::F7:
           {
             cpu.SingleStep();
             break;
@@ -213,6 +230,11 @@ int main(int argc, const char * argv[])
     {
       ppu.Tick();
       cpu.Tick();
+
+      if ((tickCount % 10) == 0)
+      {
+        cpu.ExecuteNmi();
+      }
 /*
       u64 now = mach_absolute_time();
       u64 delta = now - lastTick;
