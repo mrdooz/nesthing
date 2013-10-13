@@ -39,18 +39,6 @@ namespace nes
 
 int main(int argc, const char * argv[])
 {
-
-  {
-    u8 x4 = 4;
-    u8 sx4 = 252;
-    s8 ssx4 = (s8)sx4;
-    u8 x6 = 6;
-    u8 sx6 = 246;
-    s8 ssx6 = (s8)sx6;
-    int a = 10;
-
-  }
-
   ifstream str("nesthing.brk");
 
   u16 x;
@@ -60,7 +48,7 @@ int main(int argc, const char * argv[])
   }
   
   // Create the main window
-  sf::RenderWindow window(sf::VideoMode(800, 600, 32), "It's just a NES thang");
+  sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
   window.setVerticalSyncEnabled(true);
 
   sf::Image image;
@@ -168,18 +156,18 @@ int main(int argc, const char * argv[])
             break;
           }
 
+          case sf::Keyboard::F5:
+            executing = !executing;
+            break;
+
           case sf::Keyboard::F11:
           case sf::Keyboard::F7:
-          {
             cpu.SingleStep();
             break;
-          }
 
-          case sf::Keyboard::Up:
-          {
-            cpu.disasmOfs -= 1;
+          case sf::Keyboard::F9:
+            cpu.ToggleBreakpointAtCursor();
             break;
-          }
 
           case sf::Keyboard::PageUp:
           {
@@ -187,9 +175,15 @@ int main(int argc, const char * argv[])
             break;
           }
 
+          case sf::Keyboard::Up:
+          {
+            cpu.UpdateCursorPos(-1);
+            break;
+          }
+
           case sf::Keyboard::Down:
           {
-            cpu.disasmOfs += 1;
+            cpu.UpdateCursorPos(1);
             break;
           }
 
@@ -217,11 +211,6 @@ int main(int argc, const char * argv[])
             break;
           }
 
-          case sf::Keyboard::X:
-          {
-            executing = !executing;
-            break;
-          }
         }
       }
     }
@@ -281,8 +270,9 @@ int main(int argc, const char * argv[])
         }
       }
 
-      if (cpu.m_breakpoints.find(cpu.regs.ip) != cpu.m_breakpoints.end())
+      if (cpu.m_breakpoints.find(cpu.m_regs.ip) != cpu.m_breakpoints.end())
       {
+        cpu.ExecuteNmi();
         runUntilBranch = false;
         runUntilReturn = false;
         executing = false;

@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2F23B0716D1201E79CAE2534 /* ppu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2F23B9A421E0415E0B6320F3 /* ppu.cpp */; };
+		2F23BAC2AE4E1A21024CA794 /* mmc1.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2F23B5F8A06917C4D34DDE86 /* mmc1.cpp */; };
+		2F23BC9CAD72BBA69AE56BE8 /* nes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2F23B8BE4C3CC2BEE9617E66 /* nes.cpp */; };
+		2F23BE537DFE3BFD14CCBFFE /* cpu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2F23B3E4D657F1A5078954AC /* cpu.cpp */; };
 		762F640D17EEA4F0005ED514 /* SFML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 762F640C17EEA4F0005ED514 /* SFML.framework */; };
 		7649967C17EE0E2D00B9D8C3 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7649967717EE0E2D00B9D8C3 /* main.cpp */; };
 		7649967D17EE0E2D00B9D8C3 /* nes_helpers.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7649967817EE0E2D00B9D8C3 /* nes_helpers.cpp */; };
@@ -30,6 +34,14 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		2F23B3E4D657F1A5078954AC /* cpu.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = cpu.cpp; path = src/cpu.cpp; sourceTree = SOURCE_ROOT; };
+		2F23B5BC2EE26B6612205522 /* ppu.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = ppu.hpp; path = src/ppu.hpp; sourceTree = SOURCE_ROOT; };
+		2F23B5F55415FB30A637C8C9 /* cpu.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = cpu.hpp; path = src/cpu.hpp; sourceTree = SOURCE_ROOT; };
+		2F23B5F8A06917C4D34DDE86 /* mmc1.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = mmc1.cpp; path = src/mmc1.cpp; sourceTree = SOURCE_ROOT; };
+		2F23B8BE4C3CC2BEE9617E66 /* nes.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = nes.cpp; path = src/nes.cpp; sourceTree = SOURCE_ROOT; };
+		2F23B9A421E0415E0B6320F3 /* ppu.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ppu.cpp; path = src/ppu.cpp; sourceTree = SOURCE_ROOT; };
+		2F23BCEED3BE6E5203FA7F55 /* mmc1.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = mmc1.hpp; path = src/mmc1.hpp; sourceTree = SOURCE_ROOT; };
+		2F23BE9754689D2FCFB4582D /* nes.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = nes.hpp; path = src/nes.hpp; sourceTree = SOURCE_ROOT; };
 		762F640C17EEA4F0005ED514 /* SFML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SFML.framework; path = ../../../../Library/Frameworks/SFML.framework; sourceTree = "<group>"; };
 		7649967717EE0E2D00B9D8C3 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; indentWidth = 2; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = src/main.cpp; sourceTree = SOURCE_ROOT; tabWidth = 2; };
 		7649967817EE0E2D00B9D8C3 /* nes_helpers.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = nes_helpers.cpp; path = src/nes_helpers.cpp; sourceTree = SOURCE_ROOT; };
@@ -91,6 +103,14 @@
 				7649967917EE0E2D00B9D8C3 /* nes_helpers.hpp */,
 				7649967A17EE0E2D00B9D8C3 /* nesthing.hpp */,
 				7649967B17EE0E2D00B9D8C3 /* opcodes.hpp */,
+				2F23B3E4D657F1A5078954AC /* cpu.cpp */,
+				2F23B5F55415FB30A637C8C9 /* cpu.hpp */,
+				2F23B5F8A06917C4D34DDE86 /* mmc1.cpp */,
+				2F23BCEED3BE6E5203FA7F55 /* mmc1.hpp */,
+				2F23B9A421E0415E0B6320F3 /* ppu.cpp */,
+				2F23B5BC2EE26B6612205522 /* ppu.hpp */,
+				2F23B8BE4C3CC2BEE9617E66 /* nes.cpp */,
+				2F23BE9754689D2FCFB4582D /* nes.hpp */,
 			);
 			path = nesthing;
 			sourceTree = "<group>";
@@ -148,6 +168,10 @@
 			files = (
 				7649967C17EE0E2D00B9D8C3 /* main.cpp in Sources */,
 				7649967D17EE0E2D00B9D8C3 /* nes_helpers.cpp in Sources */,
+				2F23BE537DFE3BFD14CCBFFE /* cpu.cpp in Sources */,
+				2F23BAC2AE4E1A21024CA794 /* mmc1.cpp in Sources */,
+				2F23B0716D1201E79CAE2534 /* ppu.cpp in Sources */,
+				2F23BC9CAD72BBA69AE56BE8 /* nes.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

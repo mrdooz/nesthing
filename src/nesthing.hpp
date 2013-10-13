@@ -27,9 +27,11 @@ namespace nes
   using std::array;
   using std::pair;
   using std::unordered_set;
+  using std::unordered_map;
   using std::make_pair;
   using std::max;
   using std::min;
+  using std::map;
 
   using sf::Window;
   using sf::Image;

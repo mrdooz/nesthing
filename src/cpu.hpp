@@ -18,6 +18,7 @@ namespace nes
 
   struct PrgRom
   {
+    u16 base;
     array<u8, 16*1024> data;
     vector<pair<u32, string> > disasm;
   };
@@ -59,19 +60,25 @@ namespace nes
     u8 Pop8();
 
     void DoBinOp(BinOp op, s8* reg, u8 value);
+    void UpdateCursorPos(int delta);
+    void ToggleBreakpointAtCursor();
 
     OpCode PeekOp();
 
-    struct
+    union
     {
-      u8 c : 1;   // carry
-      u8 z : 1;   // zero
-      u8 i : 1;   // interrupt disabled
-      u8 d : 1;   // decimal mode
-      u8 b : 1;   // software interrupt
-      u8 r : 1;   // reserved (1)
-      u8 v : 1;   // overflow
-      u8 s : 1;   // sign
+      struct
+      {
+        u8 c : 1;   // carry
+        u8 z : 1;   // zero
+        u8 i : 1;   // interrupt disabled
+        u8 d : 1;   // decimal mode
+        u8 b : 1;   // software interrupt
+        u8 r : 1;   // reserved (1)
+        u8 v : 1;   // overflow
+        u8 s : 1;   // sign
+      };
+      u8 reg;
     } m_flags;
 
     vector<u8> memory;
@@ -85,7 +92,7 @@ namespace nes
       u32 ip;
       u8 s;
       u8 a, x, y;
-    } regs;
+    } m_regs;
 
     sf::Font font;
 
@@ -99,6 +106,9 @@ namespace nes
     // TODO: replace with a higher level NES thing that contains both the PPU and the CPU
     PPU* m_ppu;
     MMC1* m_mmc1;
+
+    bool m_freeMovement;
+    u16 m_cursorIp;
   };
 }
 

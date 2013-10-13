@@ -1,16 +1,21 @@
 #include "nes_helpers.hpp"
 #include <iostream>
 #include <stdarg.h>
+#include <unordered_map>
 
 #include "cpu.hpp"
 #include "ppu.hpp"
+#include "nesthing.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
+
+
 namespace nes
 {
+  map<u16, string> addrLookup;
 
 #ifdef _WIN32
   string ToString(char const * const format, ... ) 
@@ -26,7 +31,7 @@ namespace nes
 
     return string(buf);
   }
-#endif
+
   void LogConsole(char const * const format, ... )
   {
     va_list arg;
@@ -40,6 +45,16 @@ namespace nes
 
     OutputDebugStringA(buf);
   }
+#else
+
+  void LogConsole(char const * const format, ... )
+  {
+    va_list arg;
+    va_start(arg, format);
+    vprintf(format, arg);
+    va_end(arg);
+  }
+#endif
 
   Status LoadINes(const char* filename, Cpu6502* cpu, PPU* ppu)
   {
@@ -78,15 +93,11 @@ namespace nes
     {
       PrgRom rom;
       memcpy(&rom.data[0], &base[i*romBankSize], romBankSize);
-      // TODO: Disassemble the bank pointed to by the reset vector
-      // Just disassemble the last bank on init
-      if (i == 0 && numBanks > 1)
+      switch (i)
       {
-        Disassemble(&rom.data[0], rom.data.size(), 0x8000, &rom.disasm);
-      }
-      else if (i == numBanks - 1)
-      {
-        Disassemble(&rom.data[0], rom.data.size(), 0xC000, &rom.disasm);
+        case 0: rom.base = 0x8000; break;
+        case 1: rom.base = 0xc000; break;
+        default: rom.base = 0; break;
       }
       cpu->m_prgRom.emplace_back(rom);
     }
@@ -140,6 +151,25 @@ namespace nes
 
   void Disassemble(const u8* data, size_t len, u32 org, vector<pair<u32, string>>* output)
   {
+    // add known addresses
+    // TODO: These addresses are only valid for CPU memory mapping. It would be cool to
+    // be able to switch to PPU mode for stuff like pattern tables
+    addrLookup[0x2000] = "PPU Control Register 1";
+    addrLookup[0x2001] = "PPU Control Register 2";
+    addrLookup[0x2002] = "PPU Status Register";
+    addrLookup[0x2003] = "Sprite Memory Address";
+    addrLookup[0x2004] = "Sprite Memory Data";
+    addrLookup[0x2005] = "Background Scroll";
+    addrLookup[0x2006] = "PPU Memory Address";
+    addrLookup[0x2007] = "PPU Memory Data";
+    addrLookup[0x4014] = "DMA";
+    addrLookup[0x4015] = "Sound Switch";
+    addrLookup[0x4016] = "Joystick 1";
+    addrLookup[0x4017] = "Joystick 2";
+    addrLookup[0xfffa] = "NMI vector";
+    addrLookup[0xfffc] = "Reset vector";
+    addrLookup[0xfffe] = "IRQ/BRK vector";
+
     // Returns the disassembly of data. output is sorted, with pairs of (start_addr, disasm)
     output->clear();
     char buf[512];
@@ -215,6 +245,18 @@ namespace nes
     }
   }
 
+  const char* NamedAddress(u16 addr)
+  {
+    auto it = addrLookup.find(addr);
+    if (it == addrLookup.end())
+    {
+      return "";
+    }
+
+    static char buf[64];
+    sprintf(buf, "  ; %s", addrLookup[addr].c_str());
+    return buf;
+  }
 
   const char* OpToStringA(const char* op)
   {
@@ -227,24 +269,27 @@ namespace nes
   const char* OpToStringAbs(const char* op, u8 lo, u8 hi)
   {
     // operand is address $HHLL
-    static char buf[32];
-    sprintf(buf, "%s $%.4x", op, ((u16)hi << 8) + lo);
+    static char buf[128];
+    u16 addr = ((u16)hi << 8) + lo;
+    sprintf(buf, "%s $%.4x%s", op, addr, NamedAddress(addr));
     return buf;
   }
 
   const char* OpToStringAbsX(const char* op, u8 lo, u8 hi)
   {
     // operand is address incremented by X with carry
-    static char buf[32];
-    sprintf(buf, "%s $%.4x,X", op, ((u16)hi << 8) + lo);
+    static char buf[128];
+    u16 addr = ((u16)hi << 8) + lo;
+    sprintf(buf, "%s $%.4x,X%s", op, addr, NamedAddress(addr));
     return buf;
   }
 
   const char* OpToStringAbsY(const char* op, u8 lo, u8 hi)
   {
     // operand is address incremented by Y with carry
-    static char buf[32];
-    sprintf(buf, "%s $%.4x,Y", op, ((u16)hi << 8) + lo);
+    static char buf[128];
+    u16 addr = ((u16)hi << 8) + lo;
+    sprintf(buf, "%s $%.4x,Y", op, addr, NamedAddress(addr));
     return buf;
   }
 
