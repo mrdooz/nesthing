@@ -154,14 +154,18 @@ namespace nes
     // add known addresses
     // TODO: These addresses are only valid for CPU memory mapping. It would be cool to
     // be able to switch to PPU mode for stuff like pattern tables
-    addrLookup[0x2000] = "PPU Control Register 1";
-    addrLookup[0x2001] = "PPU Control Register 2";
-    addrLookup[0x2002] = "PPU Status Register";
-    addrLookup[0x2003] = "Sprite Memory Address";
-    addrLookup[0x2004] = "Sprite Memory Data";
-    addrLookup[0x2005] = "Background Scroll";
-    addrLookup[0x2006] = "PPU Memory Address";
-    addrLookup[0x2007] = "PPU Memory Data";
+    // Note, the PPU registers repeat from 0x2000 to 0x3fff
+    for (int i = 0; i < 1024; ++i)
+    {
+      addrLookup[0x2000+i*8] = "PPU Control Register 1";
+      addrLookup[0x2001+i*8] = "PPU Control Register 2";
+      addrLookup[0x2002+i*8] = "PPU Status Register";
+      addrLookup[0x2003+i*8] = "Sprite Memory Address";
+      addrLookup[0x2004+i*8] = "Sprite Memory Data";
+      addrLookup[0x2005+i*8] = "Background Scroll";
+      addrLookup[0x2006+i*8] = "PPU Memory Address";
+      addrLookup[0x2007+i*8] = "PPU Memory Data";
+    }
     addrLookup[0x4014] = "DMA";
     addrLookup[0x4015] = "Sound Switch";
     addrLookup[0x4016] = "Joystick 1";

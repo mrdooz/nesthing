@@ -79,7 +79,30 @@ int main(int argc, const char * argv[])
   bool executing = false;
   bool runUntilReturn = false;
   bool runUntilBranch = false;
+/*
+  u64 start = mach_absolute_time();
+  u64 elapsed;
+  u64 ns;
 
+  int numTicks = 0;
+  while (true)
+  {
+    cpu.Tick();
+    ppu.Tick();
+    numTicks++;
+    u64 cur = mach_absolute_time();
+    elapsed = cur - start;
+    Nanoseconds n = AbsoluteToNanoseconds(*(AbsoluteTime*)&elapsed);
+    ns = *(u64*)&n;
+    if (ns > 1e9)
+    {
+      break;
+    }
+  }
+
+  printf("%d ticks in %llu ns", numTicks, ns);
+  return 0;
+*/
   auto IsRunning = [&]() { return executing || runUntilBranch || runUntilReturn; };
 
   int updateFrequency = 1000;
@@ -213,6 +236,13 @@ int main(int argc, const char * argv[])
 
         }
       }
+    }
+
+    static u16 lastIp = 0;
+    if (lastIp != cpu.m_regs.ip)
+    {
+      printf("ip: %.2x\n", cpu.m_regs.ip);
+      lastIp = cpu.m_regs.ip;
     }
 
     if (executing || runUntilReturn || runUntilBranch)

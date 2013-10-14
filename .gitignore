@@ -1,3 +1,4 @@
+.idea/*
 _win32/Debug/*
 dcc6502/*
 *.suo
