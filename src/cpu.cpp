@@ -15,6 +15,7 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   , m_mmc1(mmc1)
   , m_freeMovement(true)
   , m_cursorIp(0)
+  , m_inNmi(false)
 {
   memset(&m_flags, 0, sizeof(m_flags));
   memset(&m_regs, 0, sizeof(m_regs));
@@ -28,13 +29,14 @@ OpCode Cpu6502::PeekOp()
 
 void Cpu6502::ExecuteNmi()
 {
-  u16 t = m_regs.ip;
-  m_regs.ip = m_interruptVector.nmi;
-  while (PeekOp() != OpCode::RTI)
+  if (m_inNmi)
   {
-    SingleStep();
-    m_regs.ip = t;
+    return;
   }
+
+  m_storedIp = m_regs.ip;
+  m_storedFlags = m_flags.reg;
+  m_inNmi = true;
 }
 
 void Cpu6502::Tick()
@@ -287,6 +289,22 @@ u8 Cpu6502::SingleStep()
 
   int opLength = g_instrLength[op8];
   bool ipUpdated = false;
+
+  auto fnBranchFlagNotSet = [&](u8 flag){
+    if (!flag)
+    {
+      m_regs.ip += (s8)lo;
+      ipUpdated = true;
+    }
+  };
+
+  auto fnBranchFlagSet = [&](u8 flag){
+    if (flag)
+    {
+      m_regs.ip += (s8)lo;
+      ipUpdated = true;
+    }
+  };
 
   switch (op)
   {
@@ -652,46 +670,36 @@ u8 Cpu6502::SingleStep()
       // Branching instructions
       //////////////////////////////////////////////////////////////////////////
 
-  #define BRANCH_FLAG_NOT_SET(f)   \
-    if (!m_flags.f) {                \
-    m_regs.ip += (s8)lo;             \
-    }
-
-  #define BRANCH_FLAG_SET(f)       \
-    if (m_flags.f) {                 \
-    m_regs.ip += (s8)lo;             \
-    }
-
     case OpCode::BPL_REL:
-      BRANCH_FLAG_NOT_SET(s);
+      fnBranchFlagNotSet(m_flags.s);
       break;
 
     case OpCode::BMI_REL:
-      BRANCH_FLAG_SET(s);
+      fnBranchFlagSet(m_flags.s);
       break;
 
     case OpCode::BVC_REL:
-      BRANCH_FLAG_NOT_SET(v);
+      fnBranchFlagNotSet(m_flags.v);
       break;
 
     case OpCode::BVS_REL:
-      BRANCH_FLAG_SET(v);
+      fnBranchFlagSet(m_flags.v);
       break;
 
     case OpCode::BCC_REL:
-      BRANCH_FLAG_NOT_SET(c);
+      fnBranchFlagNotSet(m_flags.c);
       break;
 
     case OpCode::BCS_REL:
-      BRANCH_FLAG_SET(c);
+      fnBranchFlagSet(m_flags.c);
       break;
 
     case OpCode::BNE_REL:
-      BRANCH_FLAG_NOT_SET(z);
+      fnBranchFlagNotSet(m_flags.z);
       break;
 
     case OpCode::BEQ_REL:
-      BRANCH_FLAG_SET(z);
+      fnBranchFlagSet(m_flags.z);
       break;
 
     case OpCode::JMP_IND:
@@ -735,6 +743,13 @@ u8 Cpu6502::SingleStep()
   if (m_freeMovement)
   {
     m_cursorIp = m_regs.ip;
+  }
+
+  if (m_inNmi && PeekOp() == OpCode::RTI)
+  {
+    m_regs.ip = m_storedIp;
+    m_storedFlags = m_flags.reg;
+    m_inNmi = false;
   }
 
   return g_instructionTiming[(u8)op];
@@ -822,6 +837,16 @@ void Cpu6502::ToggleBreakpointAtCursor()
   else
   {
     m_breakpoints.erase(it);
+  }
+
+  if (FILE* f = fopen("/Users/dooz/projects/nesthing/nesthing.brk", "wt"))
+  {
+    for (auto& b: m_breakpoints)
+    {
+      fprintf(f, "0x%.4x\n", b);
+    }
+
+    fclose(f);
   }
 }
 

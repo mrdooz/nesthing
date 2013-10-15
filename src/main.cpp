@@ -34,25 +34,146 @@ namespace nes
   PPU ppu;
   MMC1 mmc1;
   Cpu6502 cpu(&ppu, &mmc1);
+
+  bool executing = false;
+  bool runUntilReturn = false;
+  bool runUntilBranch = false;
+
 }
 
+bool HandleKeyboardInput(const sf::Event& event)
+{
+  switch (event.key.code)
+  {
+    case sf::Keyboard::Escape:
+    {
+      return true;
+    }
+
+    case sf::Keyboard::B:
+    {
+      runUntilBranch = true;
+      break;
+    }
+
+    case sf::Keyboard::D:
+    {
+      if (!cpu.m_prgRom.empty())
+      {
+        for (auto& d : cpu.m_prgRom[0].disasm)
+        {
+          printf("%.4x  %s\n", d.first, d.second.c_str());
+        }
+      }
+      break;
+    }
+
+    case sf::Keyboard::S:
+    {
+      sf::Image image;
+      image.create(32*8, 30*8);
+
+      for (size_t i = 0; i < 30*8; ++i)
+      {
+        ppu.DrawScanline(image);
+      }
+
+#if _WIN32
+            image.saveToFile("c:/temp/tjong.png");
+#else
+      image.saveToFile("/Users/dooz/tmp/tjong.png");
+#endif
+      break;
+    }
+
+    case sf::Keyboard::O:
+    {
+      runUntilReturn = true;
+      break;
+    }
+
+    case sf::Keyboard::Z:
+      cpu.m_flags.z ^= cpu.m_flags.z;
+      break;
+
+    case sf::Keyboard::R:
+    {
+      cpu.Reset();
+      break;
+    }
+
+    case sf::Keyboard::F5:
+      executing = !executing;
+      break;
+
+    case sf::Keyboard::F11:
+    case sf::Keyboard::F7:
+      cpu.SingleStep();
+      break;
+
+    case sf::Keyboard::F9:
+      cpu.ToggleBreakpointAtCursor();
+      break;
+
+    case sf::Keyboard::PageUp:
+    {
+      cpu.disasmOfs -= 20;
+      break;
+    }
+
+    case sf::Keyboard::Up:
+    {
+      cpu.UpdateCursorPos(-1);
+      break;
+    }
+
+    case sf::Keyboard::Down:
+    {
+      cpu.UpdateCursorPos(1);
+      break;
+    }
+
+    case sf::Keyboard::PageDown:
+    {
+      cpu.disasmOfs += 20;
+      break;
+    }
+
+    case sf::Keyboard::Home:
+    {
+      cpu.disasmOfs = 0;
+      break;
+    }
+
+    case sf::Keyboard::J:
+    {
+      cpu.memoryOfs += 10 * 16;
+      break;
+    }
+
+    case sf::Keyboard::K:
+    {
+      cpu.memoryOfs -= 10 * 16;
+      break;
+    }
+
+  }
+  return false;
+}
 
 int main(int argc, const char * argv[])
 {
-  ifstream str("nesthing.brk");
+  ifstream str("/Users/dooz/projects/nesthing/nesthing.brk");
 
   u16 x;
   while (str >> hex >> x)
   {
-    //cpu.m_breakpoints.insert(x);
+    cpu.m_breakpoints.insert(x);
   }
   
   // Create the main window
   sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
   window.setVerticalSyncEnabled(true);
-
-  sf::Image image;
-  image.create(32*8, 30*8);
 
   if (argc < 2)
   {
@@ -76,9 +197,6 @@ int main(int argc, const char * argv[])
   u64 lastTick = mach_absolute_time();
 #endif
   u64 tickCount = 0;
-  bool executing = false;
-  bool runUntilReturn = false;
-  bool runUntilBranch = false;
 /*
   u64 start = mach_absolute_time();
   u64 elapsed;
@@ -105,155 +223,56 @@ int main(int argc, const char * argv[])
 */
   auto IsRunning = [&]() { return executing || runUntilBranch || runUntilReturn; };
 
+  u64 redrawIntervalMs = 1000;
   int updateFrequency = 1000;
 
   bool done = false;
+  u64 lastRedraw = 0;
+  bool redraw = true;
   while (!done)
   {
     tickCount++;
 
-    if ((IsRunning() && ((tickCount % updateFrequency) == 0)) || !IsRunning())
+    // Check if we should redraw the window
+    u64 now = mach_absolute_time();
+    u64 delta = now - lastRedraw;
+    Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
+    u64 deltaNs = *(u64*)&deltaNsTmp;
+    if (deltaNs > redrawIntervalMs * 1000000)
     {
-      window.clear();
+      redraw = true;
+      lastRedraw = now;
     }
+
+    redraw |= !IsRunning();
+
 
     sf::Event event;
     if ((IsRunning() && window.pollEvent(event)) || (!IsRunning() && window.waitEvent(event)))
     {
       if (event.type == sf::Event::KeyReleased)
       {
-        switch (event.key.code)
-        {
-          case sf::Keyboard::Escape:
-          {
-            done = true;
-            break;
-          }
-
-          case sf::Keyboard::B:
-          {
-            runUntilBranch = true;
-            break;
-          }
-
-          case sf::Keyboard::D:
-          {
-            if (!cpu.m_prgRom.empty())
-            {
-              for (auto& d : cpu.m_prgRom[0].disasm)
-              {
-                printf("%.4x  %s\n", d.first, d.second.c_str());
-              }
-            }
-            break;
-          }
-
-          case sf::Keyboard::S:
-          {
-            for (size_t i = 0; i < 30*8; ++i)
-            {
-              ppu.DrawScanline(image);
-            }
-
-#if _WIN32
-            image.saveToFile("c:/temp/tjong.png");
-#else
-            image.saveToFile("/Users/dooz/tmp/tjong.png");
-#endif
-            break;
-          }
-
-          case sf::Keyboard::O:
-          {
-            runUntilReturn = true;
-            break;
-          }
-
-          case sf::Keyboard::Z:
-            cpu.m_flags.z ^= cpu.m_flags.z;
-            break;
-
-          case sf::Keyboard::R:
-          {
-            cpu.Reset();
-            break;
-          }
-
-          case sf::Keyboard::F5:
-            executing = !executing;
-            break;
-
-          case sf::Keyboard::F11:
-          case sf::Keyboard::F7:
-            cpu.SingleStep();
-            break;
-
-          case sf::Keyboard::F9:
-            cpu.ToggleBreakpointAtCursor();
-            break;
-
-          case sf::Keyboard::PageUp:
-          {
-            cpu.disasmOfs -= 20;
-            break;
-          }
-
-          case sf::Keyboard::Up:
-          {
-            cpu.UpdateCursorPos(-1);
-            break;
-          }
-
-          case sf::Keyboard::Down:
-          {
-            cpu.UpdateCursorPos(1);
-            break;
-          }
-
-          case sf::Keyboard::PageDown:
-          {
-            cpu.disasmOfs += 20;
-            break;
-          }
-
-          case sf::Keyboard::Home:
-          {
-            cpu.disasmOfs = 0;
-            break;
-          }
-
-          case sf::Keyboard::J:
-          {
-            cpu.memoryOfs += 10 * 16;
-            break;
-          }
-
-          case sf::Keyboard::K:
-          {
-            cpu.memoryOfs -= 10 * 16;
-            break;
-          }
-
-        }
+        done = HandleKeyboardInput(event);
       }
     }
 
-    static u16 lastIp = 0;
-    if (lastIp != cpu.m_regs.ip)
-    {
-      printf("ip: %.2x\n", cpu.m_regs.ip);
-      lastIp = cpu.m_regs.ip;
-    }
+//    static u16 lastIp = 0;
+//    if (lastIp != cpu.m_regs.ip)
+//    {
+//      printf("ip: %.2x\n", cpu.m_regs.ip);
+//      lastIp = cpu.m_regs.ip;
+//    }
 
     if (executing || runUntilReturn || runUntilBranch)
     {
-      ppu.Tick();
-      cpu.Tick();
 
-      if ((tickCount % 10) == 0)
+      if ((tickCount % 100) == 0)
       {
         cpu.ExecuteNmi();
       }
+
+      ppu.Tick();
+      cpu.Tick();
 /*
       u64 now = mach_absolute_time();
       u64 delta = now - lastTick;
@@ -302,19 +321,20 @@ int main(int argc, const char * argv[])
 
       if (cpu.m_breakpoints.find(cpu.m_regs.ip) != cpu.m_breakpoints.end())
       {
-        cpu.ExecuteNmi();
+        redraw = true;
         runUntilBranch = false;
         runUntilReturn = false;
         executing = false;
       }
     }
 
-    if ((IsRunning() && ((tickCount % updateFrequency) == 0)) || !IsRunning())
+    if (redraw)
     {
+      window.clear();
       cpu.RenderState(window);
       window.display();
+      redraw = false;
     }
-
   }
 
   return 0;

@@ -36,6 +36,7 @@ namespace nes
 
     void Tick();
     void ExecuteNmi();
+    bool InNmi() const;
 
     void SetIp(u32 v);
     u8 SingleStep();
@@ -89,7 +90,7 @@ namespace nes
 
     struct  
     {
-      u32 ip;
+      u16 ip;
       u8 s;
       u8 a, x, y;
     } m_regs;
@@ -109,6 +110,9 @@ namespace nes
 
     bool m_freeMovement;
     u16 m_cursorIp;
+    u16 m_storedIp;
+    u8 m_storedFlags;
+    bool m_inNmi;
   };
 }
 
