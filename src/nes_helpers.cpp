@@ -179,12 +179,12 @@ namespace nes
     char buf[512];
 
     u32 ip = 0;
-    u32 prevIp = 0;
+//    u32 prevIp = 0;
 
     while (ip < len)
     {
       u8 op = data[ip];
-      prevIp = ip;
+//      prevIp = ip;
       if (g_validOpCodes[op])
       {
         u32 nextIp = ip + g_instrLength[op];
@@ -293,7 +293,7 @@ namespace nes
     // operand is address incremented by Y with carry
     static char buf[128];
     u16 addr = ((u16)hi << 8) + lo;
-    sprintf(buf, "%s $%.4x,Y", op, addr, NamedAddress(addr));
+    sprintf(buf, "%s $%.4x,Y%s", op, addr, NamedAddress(addr));
     return buf;
   }
 

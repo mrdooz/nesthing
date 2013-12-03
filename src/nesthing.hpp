@@ -43,7 +43,10 @@ namespace nes
     OK,
     ROM_NOT_FOUND,
     INVALID_MAPPER_VERSION,
-    FONT_NOT_FOUND
+    FONT_NOT_FOUND,
+
+    FILE_NOT_FOUND,
+    FILE_READ_ERROR,
   };
 }
 

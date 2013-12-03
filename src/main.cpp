@@ -4,6 +4,7 @@
 #include "nesthing.hpp"
 #include "opcodes.hpp"
 #include "nes_helpers.hpp"
+#include "file_utils.hpp"
 #include <vector>
 #include <array>
 #include <iostream>
@@ -14,6 +15,7 @@
 #include <istream>
 #include <fstream>
 #include <iomanip>
+//#include <boost/posix_time.h>
 
 #ifdef _WIN32
 #else
@@ -161,9 +163,89 @@ bool HandleKeyboardInput(const sf::Event& event)
   return false;
 }
 
+bool FindRoot()
+{
+  // find the app.root
+  string cur = CurrentDirectory();
+  string prev = cur;
+  while (true)
+  {
+    if (FileExists("app.root"))
+    {
+      return true;
+    }
+
+    chdir("..");
+
+    // break if at the root
+    string tmp = CurrentDirectory();
+    if (tmp == prev)
+    {
+      return false;
+    }
+    prev = tmp;
+  }
+  return false;
+}
+
+struct Timer
+{
+  enum class Type
+  {
+    EventPoll,
+    Redraw,
+    CPU,
+    PPU,
+    NumTimers
+  };
+
+  Timer()
+  {
+    for (size_t i = 0; i < (int)Type::NumTimers; ++i)
+    {
+      _lastTick[i] = mach_absolute_time();
+    }
+  }
+
+  void SetInterval(Type type, u64 interval)
+  {
+    _interval[(int)type] = interval;
+  }
+
+  int Elapsed(Type type)
+  {
+    size_t idx = (size_t)type;
+    u64 now = mach_absolute_time();
+    u64 lastTick = _lastTick[idx];
+    u64 delta = now - lastTick;
+    Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
+    u64 deltaNs = *(u64*)&deltaNsTmp;
+    if (deltaNs < _interval[idx])
+      return 0;
+
+    // return # ticks, and update last tick
+    int res = deltaNs / _interval[idx];
+    _lastTick[idx] = now;
+    return res;
+  }
+
+  u64 _lastTick[(int)Type::NumTimers];
+  u64 _interval[(int)Type::NumTimers];
+
+}
+
+
 int main(int argc, const char * argv[])
 {
+#ifdef _WIN32
+  if (!FindRoot())
+  {
+    return 1;
+  }
+  ifstream str("nesthing.brk");
+#else
   ifstream str("/Users/dooz/projects/nesthing/nesthing.brk");
+#endif
 
   u16 x;
   while (str >> hex >> x)
@@ -226,35 +308,47 @@ int main(int argc, const char * argv[])
   u64 redrawIntervalMs = 1000;
   int updateFrequency = 1000;
 
+  // Poll for keyboard events at 60 hz
+  u64 eventPollIntervalNs = 1e9 / 60;
+
+  Timer timer;
+  timer.SetInterval(Timer::Type::EventPoll, 1e9/60);
+  timer.SetInterval(Timer::Type::Redraw, 1e9);
+
   bool done = false;
   u64 lastRedraw = 0;
+  u64 lastEventPoll = 0;
   bool redraw = true;
   while (!done)
   {
     tickCount++;
 
+    TODO: add timer with multiple tick slots..
+
     // Check if we should redraw the window
     u64 now = mach_absolute_time();
-    u64 delta = now - lastRedraw;
+    u64 delta = now - lastTick;
     Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
     u64 deltaNs = *(u64*)&deltaNsTmp;
-    if (deltaNs > redrawIntervalMs * 1000000)
+    if (deltaNs > redrawIntervalMs * 1000000 || !IsRunning())
     {
       redraw = true;
       lastRedraw = now;
     }
 
-    redraw |= !IsRunning();
-
-
-    sf::Event event;
-    if ((IsRunning() && window.pollEvent(event)) || (!IsRunning() && window.waitEvent(event)))
+    if (deltaNs > eventPollIntervalNs || !IsRunning())
     {
-      if (event.type == sf::Event::KeyReleased)
+      sf::Event event;
+      if ((IsRunning() && window.pollEvent(event)) || (!IsRunning() && window.waitEvent(event)))
       {
-        done = HandleKeyboardInput(event);
+        if (event.type == sf::Event::KeyReleased)
+        {
+          done = HandleKeyboardInput(event);
+        }
       }
     }
+
+    lastTick = now;
 
 //    static u16 lastIp = 0;
 //    if (lastIp != cpu.m_regs.ip)

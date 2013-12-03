@@ -45,7 +45,6 @@ namespace nes
     void Transfer(u8* dst, u8* src);
     void WriteRegisterAndFlags(u8* reg, u8 value);
     void WriteMemory(u16 addr, u8 value);
-    void LoadAbsolute(u16 addr, u8* reg);
     u8 ReadMemory(u16 addr);
 
     void SetFlags(u8 value);
@@ -113,6 +112,10 @@ namespace nes
     u16 m_storedIp;
     u8 m_storedFlags;
     bool m_inNmi;
+
+    bool m_loadButtonStates;
+    u8 m_buttonState[8];
+    u8 m_buttonIdx;
   };
 }
 

@@ -16,9 +16,12 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   , m_freeMovement(true)
   , m_cursorIp(0)
   , m_inNmi(false)
+  , m_loadButtonStates(false)
+  , m_buttonIdx(0)
 {
   memset(&m_flags, 0, sizeof(m_flags));
   memset(&m_regs, 0, sizeof(m_regs));
+  memset(m_buttonState, 0, sizeof(m_buttonState));
   m_flags.r = 1;
 }
 
@@ -134,36 +137,35 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
       }
       break;
 
+      case 0x4016:
+        // lsb controls if the button states should be read or not
+        m_loadButtonStates = !!(value & 1);
+        break;
+
     default:
       memory[addr] = value;
       break;
     }
 
   }
-}
 
-void Cpu6502::LoadAbsolute(u16 addr, u8* reg)
-{
-  u8 value;
-  if (addr >= 0x2000 && addr <= 0x2007)
-  {
-    value = m_ppu->ReadMemory(addr);
-    SetFlags(value);
-    *reg = value;
-  }
-  else
-  {
-    value = memory[addr];
-    SetFlags(value);
-    *reg = value;
-  }
 }
-
 u8 Cpu6502::ReadMemory(u16 addr)
 {
   if (addr >= 0x2000 && addr <= 0x2007)
   {
     return m_ppu->ReadMemory(addr);
+  }
+  else if (addr == 0x4016)
+  {
+    if (m_buttonIdx < 8)
+    {
+      return m_buttonState[m_buttonIdx++];
+    }
+    else
+    {
+      return 0;
+    }
   }
 
   return memory[addr];
