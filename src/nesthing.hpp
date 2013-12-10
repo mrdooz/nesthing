@@ -7,6 +7,7 @@
 #include <array>
 #include <algorithm>
 #include <unordered_set>
+#include <unordered_map>
 #include <SFML/Graphics.hpp>
 #include <SFML/System.hpp>
 

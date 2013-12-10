@@ -1,7 +1,10 @@
 .idea/*
 _win32/Debug/*
+_win32/Release/*
 dcc6502/*
 *.suo
 *.log
 *.opensdf
 *.sdf
+*.vsp
+*.psess

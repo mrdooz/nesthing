@@ -18,6 +18,8 @@
 //#include <boost/posix_time.h>
 
 #ifdef _WIN32
+#include <windows.h>
+#include <direct.h>
 #else
 #include <mach/mach.h>
 #include <mach/mach_time.h>
@@ -33,14 +35,22 @@ using namespace nes;
 
 namespace nes
 {
+  namespace
+  {
+    u64 NANOSECOND = 1000000000;
+  }
   PPU ppu;
   MMC1 mmc1;
   Cpu6502 cpu(&ppu, &mmc1);
 
-  bool executing = false;
+  bool executing = true;
   bool runUntilReturn = false;
   bool runUntilBranch = false;
 
+  bool IsRunning()
+  {
+    return executing || runUntilBranch || runUntilReturn;
+  }
 }
 
 bool HandleKeyboardInput(const sf::Event& event)
@@ -106,6 +116,7 @@ bool HandleKeyboardInput(const sf::Event& event)
 
     case sf::Keyboard::F5:
       executing = !executing;
+      printf("executing: %s\n", executing ? "Y" : "N");
       break;
 
     case sf::Keyboard::F11:
@@ -154,6 +165,10 @@ bool HandleKeyboardInput(const sf::Event& event)
       cpu.disasmOfs = 0;
       break;
     }
+
+    case sf::Keyboard::Space:
+      executing = false;
+      break;
 
     case sf::Keyboard::J:
     {
@@ -209,9 +224,19 @@ struct Timer
 
   Timer()
   {
+#ifdef _WIN32
+    QueryPerformanceFrequency(&_performanceFrequency);
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+#endif
+
     for (size_t i = 0; i < (int)Type::NumTimers; ++i)
     {
+#ifdef _WIN32
+      _lastTick[i] = now.QuadPart;
+#else
       _lastTick[i] = mach_absolute_time();
+#endif
     }
   }
 
@@ -223,11 +248,22 @@ struct Timer
   size_t Elapsed(Type type)
   {
     size_t idx = (size_t)type;
+#ifdef _WIN32
+    LARGE_INTEGER tmp;
+    QueryPerformanceCounter(&tmp);
+    u64 now = tmp.QuadPart;
+#else
     u64 now = mach_absolute_time();
+#endif
+
     u64 lastTick = _lastTick[idx];
     u64 delta = now - lastTick;
+#ifdef _WIN32
+    u64 deltaNs = NANOSECOND * (now - lastTick) / _performanceFrequency.QuadPart;
+#else
     Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
     u64 deltaNs = *(u64*)&deltaNsTmp;
+#endif
     if (deltaNs < _interval[idx])
       return 0;
 
@@ -237,6 +273,9 @@ struct Timer
     return res;
   }
 
+#ifdef _WIN32
+  LARGE_INTEGER _performanceFrequency;
+#endif
   u64 _lastTick[(int)Type::NumTimers];
   u64 _interval[(int)Type::NumTimers];
 
@@ -287,69 +326,41 @@ int main(int argc, const char * argv[])
   u64 lastTick = mach_absolute_time();
 #endif
   u64 tickCount = 0;
-/*
-  u64 start = mach_absolute_time();
-  u64 elapsed;
-  u64 ns;
-
-  int numTicks = 0;
-  while (true)
-  {
-    cpu.Tick();
-    ppu.Tick();
-    numTicks++;
-    u64 cur = mach_absolute_time();
-    elapsed = cur - start;
-    Nanoseconds n = AbsoluteToNanoseconds(*(AbsoluteTime*)&elapsed);
-    ns = *(u64*)&n;
-    if (ns > 1e9)
-    {
-      break;
-    }
-  }
-
-  printf("%d ticks in %llu ns", numTicks, ns);
-  return 0;
-*/
-  auto IsRunning = [&]() { return executing || runUntilBranch || runUntilReturn; };
 
   Timer timer;
-  timer.SetInterval(Timer::Type::EventPoll, 1e9/60);
-  timer.SetInterval(Timer::Type::Redraw, 1e9);
+  timer.SetInterval(Timer::Type::EventPoll, NANOSECOND/60);
+  timer.SetInterval(Timer::Type::Redraw, NANOSECOND/10);
 
-  /*
-      // 236250000.0 / 11
-      s64 masterClock = 236250000;
-      // Time between master clock ticks (ns)
-      double masterClockTickInterval = 1e9 / (masterClock / 11.0);
+  // master clock = 236250000 / 11
+  u64 masterClock = 236250000;
 
-      u64 d = ((u64)deltaNs.hi << 32ul) + (u64)deltaNs.lo;
-      if (d > masterClockTickInterval)
-      {
-        tickCount++;
+  timer.SetInterval(Timer::Type::CPU, NANOSECOND / (236250000 / (11 * 12)));
+  timer.SetInterval(Timer::Type::PPU, NANOSECOND / (236250000 / (11 * 4)));
 
-        if ((tickCount % 4) == 0)
-        {
-          ppu.Tick();
-        }
+  LARGE_INTEGER start, freq;
+  QueryPerformanceFrequency(&freq);
+  QueryPerformanceCounter(&start);
 
-        if ((tickCount % 12) == 0)
-        {
-          cpu.Tick();
-
-        }
-        lastTick = now;
-      }
- */
 
   bool done = false;
+  bool swapped = false;
   while (!done)
   {
-    tickCount++;
-
     sf::Event event;
     if (IsRunning())
     {
+      tickCount++;
+
+      if ((tickCount % 1000000) == 0)
+      {
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        double dd = (now.QuadPart - start.QuadPart) / (double)freq.QuadPart;
+        printf("%lf\n", tickCount / dd);
+        tickCount = 0;
+        start = now;
+      }
+
       if (timer.Elapsed(Timer::Type::Redraw) > 0)
       {
         window.clear();
@@ -357,10 +368,18 @@ int main(int argc, const char * argv[])
         window.display();
       }
 
-      if (timer.Elapsed(Timer::Type::EventPoll) > 0)
+      if (!swapped)
       {
-        window.pollEvent(event);
+        if (timer.Elapsed(Timer::Type::EventPoll) > 0)
+        {
+          window.pollEvent(event);
+          if (event.type == sf::Event::KeyReleased)
+          {
+            done = HandleKeyboardInput(event);
+          }
+        }
       }
+      swapped = false;
 
       for (size_t i = 0, e = timer.Elapsed(Timer::Type::CPU); i < e; ++i)
       {
@@ -406,6 +425,7 @@ int main(int argc, const char * argv[])
       if (event.type == sf::Event::KeyReleased)
       {
         done = HandleKeyboardInput(event);
+        swapped = true;
       }
     }
   }

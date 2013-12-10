@@ -2,6 +2,7 @@
 #include "nes_helpers.hpp"
 
 using namespace nes;
+#define DUMP_TO_STDOUT 0
 
 //  |  $2000  | PPU Control Register #1 (W)                              |
 //  |         |                                                          |
@@ -373,12 +374,17 @@ void PPU::ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* pat
         {
           image->setPixel(x+k, y+j, Color(g_NesPalette[c*3+0], g_NesPalette[c*3+1], g_NesPalette[c*3+2]));
         }
-
+#if DUMP_TO_STDOUT
         printf("%c", c == 0 ? '.' : '0' + c);
+#endif
       }
+#if DUMP_TO_STDOUT
       printf("\n");
+#endif
     }
+#if DUMP_TO_STDOUT
     printf("\n");
+#endif
   }
 }
 
