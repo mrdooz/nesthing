@@ -1,0 +1,3 @@
+dasm NEStress.asm -f3 -v3
+cat Header_Mapper0 a.out Tanks.chr > NEStress.NES
+rm a.out

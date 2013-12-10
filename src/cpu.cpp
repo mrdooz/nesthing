@@ -6,11 +6,18 @@
 
 using namespace nes;
 
+namespace
+{
+  size_t MEMORY_SIZE = 64 * 1024;
+  u8 MEMORY_FADE = 32;
+}
+
 Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
-  : memory(64*1024)
+  : m_memory(MEMORY_SIZE)
+  , m_memoryAge(MEMORY_SIZE)
   , currentBank(0)
   , disasmOfs(0)
-  , memoryOfs(0)
+  , m_memoryOfs(0)
   , m_ppu(ppu)
   , m_mmc1(mmc1)
   , m_freeMovement(true)
@@ -18,16 +25,18 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   , m_inNmi(false)
   , m_loadButtonStates(false)
   , m_buttonIdx(0)
+  , m_runToCursor(~0)
 {
   memset(&m_flags, 0, sizeof(m_flags));
   memset(&m_regs, 0, sizeof(m_regs));
   memset(m_buttonState, 0, sizeof(m_buttonState));
+  memset(m_memoryAge.data(), 0, sizeof(MEMORY_SIZE));
   m_flags.r = 1;
 }
 
 OpCode Cpu6502::PeekOp()
 {
-  return (OpCode)memory[m_regs.ip];
+  return (OpCode) m_memory[m_regs.ip];
 }
 
 void Cpu6502::ExecuteNmi()
@@ -62,15 +71,15 @@ void Cpu6502::Reset()
 
   // For mapper 1, the first bank is loaded into $8000, and the
   // last bank info $c000
-  memcpy(&memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
-  memcpy(&memory[0xc000], &m_prgRom.back().data[0], 16 * 1024);
+  memcpy(&m_memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
+  memcpy(&m_memory[0xc000], &m_prgRom.back().data[0], 16 * 1024);
 
   currentBank = m_prgRom.size() - 1;
   currentBank = 0;
 
   // Get the current interrupt table, and start executing the
   // reset interrupt
-  m_interruptVector = *(InterruptVectors*)&memory[0xfffa];
+  m_interruptVector = *(InterruptVectors*)&m_memory[0xfffa];
   m_regs.ip = m_interruptVector.reset;
   m_cursorIp = m_regs.ip;
 
@@ -133,17 +142,22 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
       // Transfer 256 bytes to SPR-RAM
       for (size_t i = 0; i < 256; ++i)
       {
-        m_ppu->WriteMemory(0x2004, memory[0x100 * (u16)value + i]);
+        m_ppu->WriteMemory(0x2004, m_memory[0x100 * (u16)value + i]);
       }
       break;
 
       case 0x4016:
         // lsb controls if the button states should be read or not
-        m_loadButtonStates = !!(value & 1);
+        m_loadButtonStates = (value & 1) != 0;
         break;
 
     default:
-      memory[addr] = value;
+      if (!ByteVisible(addr))
+      {
+        m_memoryOfs = addr;
+      }
+      m_memory[addr] = value;
+      m_memoryAge[addr] = MEMORY_FADE;
       break;
     }
 
@@ -168,7 +182,7 @@ u8 Cpu6502::ReadMemory(u16 addr)
     }
   }
 
-  return memory[addr];
+  return m_memory[addr];
 }
 
 void Cpu6502::SetFlags(u8 value)
@@ -192,32 +206,32 @@ void Cpu6502::WriteRegisterAndFlags(u8* reg, u8 value)
 
 void Cpu6502::Push16(u16 value)
 {
-  memory[0x100 + m_regs.s-1] = (u8)(value & 0xff);
-  memory[0x100 + m_regs.s-0] = (u8)((value >> 8) & 0xff);
+  m_memory[0x100 + m_regs.s-1] = (u8)(value & 0xff);
+  m_memory[0x100 + m_regs.s-0] = (u8)((value >> 8) & 0xff);
   m_regs.s -= 2;
 }
 
 void Cpu6502::Push8(u8 value)
 {
-  memory[0x100 + m_regs.s] = value;
+  m_memory[0x100 + m_regs.s] = value;
   m_regs.s--;
 }
 
 u16 Cpu6502::Pop16()
 {
   m_regs.s += 2;
-  return (u16)memory[0x100 + m_regs.s-1] + ((u16)memory[0x100 + m_regs.s] << 8);
+  return (u16) m_memory[0x100 + m_regs.s-1] + ((u16) m_memory[0x100 + m_regs.s] << 8);
 }
 
 u8 Cpu6502::Pop8()
 {
   m_regs.s++;
-  return memory[0x100 + m_regs.s];
+  return m_memory[0x100 + m_regs.s];
 }
 
 u8 Cpu6502::SingleStep()
 {
-  u8 op8 = memory[m_regs.ip];
+  u8 op8 = m_memory[m_regs.ip];
   OpCode op = (OpCode)op8;
   if (!g_validOpCodes[op8])
   {
@@ -232,56 +246,56 @@ u8 Cpu6502::SingleStep()
   switch (addrMode)
   {
     case AddressingMode::ABS:
-      addr = memory[m_regs.ip+1] + (memory[m_regs.ip+2] << 8);
+      addr = m_memory[m_regs.ip+1] + (m_memory[m_regs.ip+2] << 8);
       break;
 
     case AddressingMode::ABS_X:
-      addr = memory[m_regs.ip+1] + (memory[m_regs.ip+2] << 8) + m_regs.x;
+      addr = m_memory[m_regs.ip+1] + (m_memory[m_regs.ip+2] << 8) + m_regs.x;
       break;
 
     case AddressingMode::ABS_Y:
-      addr = memory[m_regs.ip+1] + (memory[m_regs.ip+2] << 8) + m_regs.y;
+      addr = m_memory[m_regs.ip+1] + (m_memory[m_regs.ip+2] << 8) + m_regs.y;
       break;
 
     case AddressingMode::IMM:
-      lo = memory[m_regs.ip+1];
+      lo = m_memory[m_regs.ip+1];
       break;
 
     case AddressingMode::ZPG:
-      addr = memory[m_regs.ip+1];
+      addr = m_memory[m_regs.ip+1];
       break;
 
     case AddressingMode::ZPG_X:
-      addr = (memory[m_regs.ip+1] + m_regs.x) & 0xff;
+      addr = (m_memory[m_regs.ip+1] + m_regs.x) & 0xff;
       break;
 
     case AddressingMode::ZPG_Y:
-      addr = (memory[m_regs.ip+1] + m_regs.y) & 0xff;
+      addr = (m_memory[m_regs.ip+1] + m_regs.y) & 0xff;
       break;
 
     case AddressingMode::IND:
-      addr = memory[m_regs.ip+1] + (memory[m_regs.ip+2] << 8);
+      addr = m_memory[m_regs.ip+1] + (m_memory[m_regs.ip+2] << 8);
       lo = ReadMemory(addr);
       hi = ReadMemory(addr+1);
       addr = lo + (hi << 8);
       break;
 
     case AddressingMode::X_IND:
-      addr = (memory[m_regs.ip+1] + m_regs.x) & 0xff;
+      addr = (m_memory[m_regs.ip+1] + m_regs.x) & 0xff;
       lo = ReadMemory(addr);
       hi = ReadMemory(addr+1);
       addr = lo + (hi << 8);
       break;
 
     case AddressingMode::IND_Y:
-      addr = memory[m_regs.ip+1];
+      addr = m_memory[m_regs.ip+1];
       lo = ReadMemory(addr);
       hi = ReadMemory(addr+1);
       addr = lo + (hi << 8) + m_regs.y;
       break;
 
     case AddressingMode::REL:
-      lo = memory[m_regs.ip+1];
+      lo = m_memory[m_regs.ip+1];
       break;
 
     case AddressingMode::IMPLIED:
@@ -475,7 +489,7 @@ u8 Cpu6502::SingleStep()
         s16 res = (s8)lo + (s8) m_regs.a + m_flags.c;
         WriteRegisterAndFlags(&m_regs.a, (u8)res);
         m_flags.v = res > 127 || res < -128 ? 1 : 0;
-        m_flags.c = res > 255;
+        m_flags.c = res > 255 ? 1 : 0;
         break;
       }
 
@@ -757,26 +771,56 @@ u8 Cpu6502::SingleStep()
   return g_instructionTiming[(u8)op];
 }
 
+sf::Color ColorLerp(const sf::Color& a, const sf::Color& b, float t)
+{
+  return sf::Color(
+      (u8)(a.r +  t * (b.r - a.r)),
+      (u8)(a.g +  t * (b.g - a.g)),
+      (u8)(a.b +  t * (b.b - a.b)),
+      (u8)(a.a +  t * (b.a - a.a)));
+}
+
 void Cpu6502::RenderMemory(sf::RenderWindow& window, u16 ofs)
 {
   sf::Vector2f pos(600,20);
   sf::Text text;
   text.setFont(font);
   text.setCharacterSize(16);
-  text.setColor(sf::Color::White);
 
-  u8* p = &memory[ofs];
+  u8* p = &m_memory[ofs];
+  u8* age = &m_memoryAge[ofs];
   for (size_t i = 0; i < 30; ++i)
   {
+    pos.x = 600;
     char buf[128];
-    sprintf(buf, "%.4x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x %.2x",
-      ofs + i * 16,
-      p[0x0], p[0x1], p[0x2], p[0x3], p[0x4], p[0x5], p[0x6], p[0x7], 
-      p[0x8], p[0x9], p[0xa], p[0xb], p[0xc], p[0xd], p[0xe], p[0xf]);
-    p += 16;
+    // write address
+    sprintf(buf, "%.4x", (u32)(ofs + i * 16));
     text.setString(buf);
     text.setPosition(pos);
+    pos.x += 50;
+    text.setColor(sf::Color::White);
     window.draw(text);
+
+    // write bytes, fading by age
+    for (size_t j = 0; j < 16; ++j)
+    {
+      if (age[j] > 0)
+      {
+        text.setColor(ColorLerp(sf::Color::White, sf::Color::Red, age[j] / (float)MEMORY_FADE));
+        age[j]--;
+      }
+      else
+      {
+        text.setColor(sf::Color::White);
+      }
+      sprintf(buf, "%.2x ", p[j]);
+      text.setString(buf);
+      text.setPosition(pos);
+      window.draw(text);
+      pos.x += 20;
+    }
+    p += 16;
+    age += 16;
     pos.y += 15;
   }
 }
@@ -793,7 +837,7 @@ void Cpu6502::RenderStack(sf::RenderWindow& window)
   {
     char buf[32];
     u32 cur = 0x1ff - i * 2;
-    sprintf(buf, "%.4x %.2x%.2x", cur, memory[cur], memory[cur - 1]);
+    sprintf(buf, "%.4x %.2x%.2x", cur, m_memory[cur], m_memory[cur - 1]);
     text.setString(buf);
     text.setPosition(pos);
     text.setColor(cur == 0x100 + m_regs.s ? sf::Color::Yellow : sf::Color::White);
@@ -852,8 +896,33 @@ void Cpu6502::ToggleBreakpointAtCursor()
   }
 }
 
+bool Cpu6502::IpAtBreakpoint()
+{
+  return m_breakpoints.find(m_regs.ip) != m_breakpoints.end() || m_regs.ip == m_runToCursor;
+}
+
+
+void Cpu6502::RunToCursor()
+{
+  m_runToCursor = m_cursorIp;
+}
+
+bool Cpu6502::ByteVisible(u16 addr) const
+{
+  size_t memoryRows = 30;
+  return addr >= m_memoryOfs && addr < m_memoryOfs + memoryRows * 16;
+}
+
 
 void Cpu6502::RenderState(sf::RenderWindow& window)
+{
+  RenderRegisters(window);
+  RenderDisassembly(window);
+  RenderStack(window);
+  RenderMemory(window, m_memoryOfs);
+}
+
+void Cpu6502::RenderRegisters(sf::RenderWindow& window)
 {
   sf::Vector2f pos(0,0);
   sf::Text text;
@@ -902,74 +971,78 @@ void Cpu6502::RenderState(sf::RenderWindow& window)
   fnRegister8("Y", m_regs.y);
   fnRegister16("IP", m_regs.ip);
   fnRegister8("S", m_regs.s);
+}
 
-  pos = sf::Vector2f(0, 20);
+void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
+{
+  sf::Vector2f pos = sf::Vector2f(0, 20);
+  sf::Text text;
+  text.setFont(font);
+  text.setCharacterSize(16);
 
   auto& rom = m_prgRom[currentBank];
   u32 ofs = m_interruptVector.reset;
 
   // Look for the current IP in the disassemble block (ideally it should always be there..)
   typedef pair<u32, string> Val;
-  auto it = find_if(rom.disasm.begin(), rom.disasm.end(), [=](const Val& a)
+  auto it = find_if(rom.disasm.begin(), rom.disasm.end(),
+      [=](const Val& a) { return a.first == (m_freeMovement ? m_cursorIp : m_regs.ip); });
+
+  if (it == rom.disasm.end())
   {
-    return a.first == (m_freeMovement ? m_cursorIp : m_regs.ip);
-  });
-
-  if (it != rom.disasm.end())
-  {
-    sf::RectangleShape currentRect;
-    int rowHeight = 15;
-    int rowWidth = 400;
-
-    currentRect.setFillColor(Color::Transparent);
-    currentRect.setOutlineColor(Color::Blue);
-    currentRect.setOutlineThickness(2);
-    currentRect.setSize(sf::Vector2f(rowWidth, rowHeight));
-
-    int startIdx = max(0, (int)(it - rom.disasm.begin()) - 10);
-    int endIdx = min((int)rom.disasm.size(), startIdx + 30);
-    int cnt = 0;
-    for (int i = startIdx; i < endIdx; ++i, ++cnt)
-    {
-      text.setPosition(pos);
-      auto& d = rom.disasm[i];
-      u32 curIp = d.first;
-      u32 idx = curIp - rom.base;
-      // Create the string "ADDR BYTES OPCODE"
-      char buf[256];
-      char* bufPtr = buf + sprintf(buf, "%.4x    ", curIp);
-      // "max" to handle the case of illegal instructions
-      size_t numBytes = max(1, g_instrLength[rom.data[idx]]);
-      for (size_t i = 0; i < numBytes; ++i)
-      {
-        bufPtr += sprintf(bufPtr, "%.2x", rom.data[idx+i]);
-      }
-      for (size_t i = 0; i < 3 - numBytes + 2; ++i)
-      {
-        bufPtr += sprintf(bufPtr, "  ");
-      }
-      sprintf(bufPtr, "%s", d.second.c_str());
-      text.setString(buf);
-      if (m_breakpoints.find(curIp) != m_breakpoints.end())
-      {
-        text.setColor(sf::Color::Red);
-      }
-      else
-      {
-        text.setColor(curIp == m_regs.ip ? sf::Color::Yellow : sf::Color::White);
-      }
-
-      if (curIp == m_cursorIp)
-      {
-        currentRect.setPosition(pos.x, pos.y+3);
-        window.draw(currentRect);
-      }
-
-      window.draw(text);
-      pos.y += rowHeight;
-    }
+    return;
   }
 
-  RenderStack(window);
-  RenderMemory(window, memoryOfs);
+  sf::RectangleShape currentRect;
+  int rowHeight = 15;
+  int rowWidth = 400;
+
+  currentRect.setFillColor(Color::Transparent);
+  currentRect.setOutlineColor(Color::Blue);
+  currentRect.setOutlineThickness(2);
+  currentRect.setSize(sf::Vector2f(rowWidth, rowHeight));
+
+  int startIdx = max(0, (int)(it - rom.disasm.begin()) - 10);
+  int endIdx = min((int)rom.disasm.size(), startIdx + 30);
+  int cnt = 0;
+  for (int i = startIdx; i < endIdx; ++i, ++cnt)
+  {
+    text.setPosition(pos);
+    auto& d = rom.disasm[i];
+    u32 curIp = d.first;
+    u32 idx = curIp - rom.base;
+    // Create the string "ADDR BYTES OPCODE"
+    char buf[256];
+    char* bufPtr = buf + sprintf(buf, "%.4x    ", curIp);
+    // "max" to handle the case of illegal instructions
+    size_t numBytes = max(1, g_instrLength[rom.data[idx]]);
+    for (size_t i = 0; i < numBytes; ++i)
+    {
+      bufPtr += sprintf(bufPtr, "%.2x", rom.data[idx+i]);
+    }
+    for (size_t i = 0; i < 3 - numBytes + 2; ++i)
+    {
+      bufPtr += sprintf(bufPtr, "  ");
+    }
+    sprintf(bufPtr, "%s", d.second.c_str());
+    text.setString(buf);
+    if (m_breakpoints.find(curIp) != m_breakpoints.end())
+    {
+      text.setColor(sf::Color::Red);
+    }
+    else
+    {
+      text.setColor(curIp == m_regs.ip ? sf::Color::Yellow : sf::Color::White);
+    }
+    if (curIp == m_cursorIp)
+    {
+      currentRect.setPosition(pos.x, pos.y+3);
+      window.draw(currentRect);
+    }
+
+    window.draw(text);
+    pos.y += rowHeight;
+  }
+
 }
+

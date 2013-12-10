@@ -52,6 +52,9 @@ namespace nes
     void RenderState(sf::RenderWindow& window);
     void RenderStack(sf::RenderWindow& window);
     void RenderMemory(sf::RenderWindow& window, u16 ofs);
+    void RenderRegisters(sf::RenderWindow& window);
+    void RenderDisassembly(sf::RenderWindow& window);
+    bool ByteVisible(u16 addr) const;
 
 
     void Push16(u16 value);
@@ -62,6 +65,8 @@ namespace nes
     void DoBinOp(BinOp op, s8* reg, u8 value);
     void UpdateCursorPos(int delta);
     void ToggleBreakpointAtCursor();
+    void RunToCursor();
+    bool IpAtBreakpoint();
 
     OpCode PeekOp();
 
@@ -81,7 +86,8 @@ namespace nes
       u8 reg;
     } m_flags;
 
-    vector<u8> memory;
+    vector<u8> m_memory;
+    vector<u8> m_memoryAge;
 
     vector<PrgRom> m_prgRom;
 
@@ -96,7 +102,8 @@ namespace nes
 
     sf::Font font;
 
-    size_t memoryOfs;
+    size_t m_runToCursor;
+    size_t m_memoryOfs;
     size_t disasmOfs;
 
     InterruptVectors m_interruptVector;

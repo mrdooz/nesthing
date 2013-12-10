@@ -117,6 +117,14 @@ bool HandleKeyboardInput(const sf::Event& event)
       cpu.ToggleBreakpointAtCursor();
       break;
 
+    case sf::Keyboard::F10:
+      if (event.key.shift)
+      {
+        cpu.RunToCursor();
+        executing = true;
+      }
+      break;
+
     case sf::Keyboard::PageUp:
     {
       cpu.disasmOfs -= 20;
@@ -149,13 +157,13 @@ bool HandleKeyboardInput(const sf::Event& event)
 
     case sf::Keyboard::J:
     {
-      cpu.memoryOfs += 10 * 16;
+      cpu.m_memoryOfs += 10 * 16;
       break;
     }
 
     case sf::Keyboard::K:
     {
-      cpu.memoryOfs -= 10 * 16;
+      cpu.m_memoryOfs -= 10 * 16;
       break;
     }
 
@@ -212,7 +220,7 @@ struct Timer
     _interval[(int)type] = interval;
   }
 
-  int Elapsed(Type type)
+  size_t Elapsed(Type type)
   {
     size_t idx = (size_t)type;
     u64 now = mach_absolute_time();
@@ -224,7 +232,7 @@ struct Timer
       return 0;
 
     // return # ticks, and update last tick
-    int res = deltaNs / _interval[idx];
+    size_t res = (size_t)(deltaNs / _interval[idx]);
     _lastTick[idx] = now;
     return res;
   }
@@ -232,7 +240,7 @@ struct Timer
   u64 _lastTick[(int)Type::NumTimers];
   u64 _interval[(int)Type::NumTimers];
 
-}
+};
 
 
 int main(int argc, const char * argv[])
@@ -305,73 +313,11 @@ int main(int argc, const char * argv[])
 */
   auto IsRunning = [&]() { return executing || runUntilBranch || runUntilReturn; };
 
-  u64 redrawIntervalMs = 1000;
-  int updateFrequency = 1000;
-
-  // Poll for keyboard events at 60 hz
-  u64 eventPollIntervalNs = 1e9 / 60;
-
   Timer timer;
   timer.SetInterval(Timer::Type::EventPoll, 1e9/60);
   timer.SetInterval(Timer::Type::Redraw, 1e9);
 
-  bool done = false;
-  u64 lastRedraw = 0;
-  u64 lastEventPoll = 0;
-  bool redraw = true;
-  while (!done)
-  {
-    tickCount++;
-
-    TODO: add timer with multiple tick slots..
-
-    // Check if we should redraw the window
-    u64 now = mach_absolute_time();
-    u64 delta = now - lastTick;
-    Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
-    u64 deltaNs = *(u64*)&deltaNsTmp;
-    if (deltaNs > redrawIntervalMs * 1000000 || !IsRunning())
-    {
-      redraw = true;
-      lastRedraw = now;
-    }
-
-    if (deltaNs > eventPollIntervalNs || !IsRunning())
-    {
-      sf::Event event;
-      if ((IsRunning() && window.pollEvent(event)) || (!IsRunning() && window.waitEvent(event)))
-      {
-        if (event.type == sf::Event::KeyReleased)
-        {
-          done = HandleKeyboardInput(event);
-        }
-      }
-    }
-
-    lastTick = now;
-
-//    static u16 lastIp = 0;
-//    if (lastIp != cpu.m_regs.ip)
-//    {
-//      printf("ip: %.2x\n", cpu.m_regs.ip);
-//      lastIp = cpu.m_regs.ip;
-//    }
-
-    if (executing || runUntilReturn || runUntilBranch)
-    {
-
-      if ((tickCount % 100) == 0)
-      {
-        cpu.ExecuteNmi();
-      }
-
-      ppu.Tick();
-      cpu.Tick();
-/*
-      u64 now = mach_absolute_time();
-      u64 delta = now - lastTick;
-      Nanoseconds deltaNs = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
-
+  /*
       // 236250000.0 / 11
       s64 masterClock = 236250000;
       // Time between master clock ticks (ns)
@@ -395,6 +341,37 @@ int main(int argc, const char * argv[])
         lastTick = now;
       }
  */
+
+  bool done = false;
+  while (!done)
+  {
+    tickCount++;
+
+    sf::Event event;
+    if (IsRunning())
+    {
+      if (timer.Elapsed(Timer::Type::Redraw) > 0)
+      {
+        window.clear();
+        cpu.RenderState(window);
+        window.display();
+      }
+
+      if (timer.Elapsed(Timer::Type::EventPoll) > 0)
+      {
+        window.pollEvent(event);
+      }
+
+      for (size_t i = 0, e = timer.Elapsed(Timer::Type::CPU); i < e; ++i)
+      {
+        cpu.Tick();
+      }
+
+      for (size_t i = 0, e = timer.Elapsed(Timer::Type::PPU); i < e; ++i)
+      {
+        ppu.Tick();
+      }
+
       if (runUntilReturn)
       {
         OpCode op = cpu.PeekOp();
@@ -403,7 +380,6 @@ int main(int argc, const char * argv[])
           runUntilReturn = false;
         }
       }
-
       if (runUntilBranch)
       {
         OpCode op = cpu.PeekOp();
@@ -413,21 +389,24 @@ int main(int argc, const char * argv[])
         }
       }
 
-      if (cpu.m_breakpoints.find(cpu.m_regs.ip) != cpu.m_breakpoints.end())
+      if (cpu.IpAtBreakpoint())
       {
-        redraw = true;
         runUntilBranch = false;
         runUntilReturn = false;
         executing = false;
       }
     }
-
-    if (redraw)
+    else
     {
       window.clear();
       cpu.RenderState(window);
       window.display();
-      redraw = false;
+
+      window.waitEvent(event);
+      if (event.type == sf::Event::KeyReleased)
+      {
+        done = HandleKeyboardInput(event);
+      }
     }
   }
 
