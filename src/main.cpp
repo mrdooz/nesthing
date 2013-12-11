@@ -245,9 +245,8 @@ struct Timer
     _interval[(int)type] = interval;
   }
 
-  size_t Elapsed(Type type)
+  void Elapsed(size_t* numTicks)
   {
-    size_t idx = (size_t)type;
 #ifdef _WIN32
     LARGE_INTEGER tmp;
     QueryPerformanceCounter(&tmp);
@@ -256,21 +255,29 @@ struct Timer
     u64 now = mach_absolute_time();
 #endif
 
-    u64 lastTick = _lastTick[idx];
-    u64 delta = now - lastTick;
+    size_t numTimers = (size_t)Type::NumTimers;
+    // iterate all the timers, and calc number of ticks for each one
+    for (size_t i = 0; i < numTimers; ++i)
+    {
+      u64 lastTick = _lastTick[i];
+      u64 delta = now - lastTick;
 #ifdef _WIN32
-    u64 deltaNs = NANOSECOND * (now - lastTick) / _performanceFrequency.QuadPart;
+      u64 deltaNs = NANOSECOND * (now - lastTick) / _performanceFrequency.QuadPart;
 #else
-    Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
-    u64 deltaNs = *(u64*)&deltaNsTmp;
+      Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
+      u64 deltaNs = *(u64*)&deltaNsTmp;
 #endif
-    if (deltaNs < _interval[idx])
-      return 0;
-
-    // return # ticks, and update last tick
-    size_t res = (size_t)(deltaNs / _interval[idx]);
-    _lastTick[idx] = now;
-    return res;
+      if (deltaNs < _interval[i])
+      {
+        numTicks[i] = 0;
+      }
+      else
+      {
+        // set # ticks, and update last tick
+        numTicks[i] = (size_t)(deltaNs / _interval[i]);
+        _lastTick[i] = now;
+      }
+    }
   }
 
 #ifdef _WIN32
@@ -361,7 +368,9 @@ int main(int argc, const char * argv[])
         start = now;
       }
 
-      if (timer.Elapsed(Timer::Type::Redraw) > 0)
+      size_t elapsedTimers[Timer::Type::NumTimers];
+      timer.Elapsed(elapsedTimers);
+      if (elapsedTimers[(size_t)Timer::Type::Redraw] > 0)
       {
         window.clear();
         cpu.RenderState(window);
@@ -370,7 +379,7 @@ int main(int argc, const char * argv[])
 
       if (!swapped)
       {
-        if (timer.Elapsed(Timer::Type::EventPoll) > 0)
+        if (elapsedTimers[(size_t)Timer::Type::EventPoll] > 0)
         {
           window.pollEvent(event);
           if (event.type == sf::Event::KeyReleased)
@@ -381,12 +390,12 @@ int main(int argc, const char * argv[])
       }
       swapped = false;
 
-      for (size_t i = 0, e = timer.Elapsed(Timer::Type::CPU); i < e; ++i)
+      for (size_t i = 0, e = elapsedTimers[(size_t)Timer::Type::CPU]; i < e; ++i)
       {
         cpu.Tick();
       }
 
-      for (size_t i = 0, e = timer.Elapsed(Timer::Type::PPU); i < e; ++i)
+      for (size_t i = 0, e = elapsedTimers[(size_t)Timer::Type::PPU]; i < e; ++i)
       {
         ppu.Tick();
       }
