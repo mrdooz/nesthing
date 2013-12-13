@@ -15,7 +15,8 @@ namespace
 Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   : m_memory(MEMORY_SIZE)
   , m_memoryAge(MEMORY_SIZE)
-  , currentBank(0)
+  , m_breakpoints(MEMORY_SIZE)
+  , m_currentBank(0)
   , disasmOfs(0)
   , m_memoryOfs(0)
   , m_ppu(ppu)
@@ -31,6 +32,7 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   memset(&m_regs, 0, sizeof(m_regs));
   memset(m_buttonState, 0, sizeof(m_buttonState));
   memset(m_memoryAge.data(), 0, sizeof(MEMORY_SIZE));
+  memset(m_breakpoints.data(), 0, sizeof(MEMORY_SIZE));
   m_flags.r = 1;
 }
 
@@ -48,6 +50,7 @@ void Cpu6502::ExecuteNmi()
 
   m_storedIp = m_regs.ip;
   m_storedFlags = m_flags.reg;
+  m_regs.ip = m_interruptVector.nmi;
   m_inNmi = true;
 }
 
@@ -61,7 +64,7 @@ void Cpu6502::SetIp(u32 v)
   m_regs.ip = v;
 }
 
-void Cpu6502::Reset()
+Status Cpu6502::Reset()
 {
   // Turn off interrupts
   m_flags.i = 1;
@@ -69,13 +72,21 @@ void Cpu6502::Reset()
   // Point the stack ptr to the top of the stack
   m_regs.s = 0xff;
 
-  // For mapper 1, the first bank is loaded into $8000, and the
-  // last bank info $c000
-  memcpy(&m_memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
-  memcpy(&m_memory[0xc000], &m_prgRom.back().data[0], 16 * 1024);
-
-  currentBank = m_prgRom.size() - 1;
-  currentBank = 0;
+  if (m_prgRom.size() == 1)
+  {
+    memcpy(&m_memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
+    memcpy(&m_memory[0xc000], &m_prgRom[0].data[0], 16 * 1024);
+  }
+  else if (m_prgRom.size() == 2)
+  {
+    memcpy(&m_memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
+    memcpy(&m_memory[0xC000], &m_prgRom[1].data[0], 16 * 1024);
+  }
+  else
+  {
+    LOG("Invalid PRG-ROM count: %d", m_prgRom.size());
+    return Status::ERROR_LOADING_ROM;
+  }
 
   // Get the current interrupt table, and start executing the
   // reset interrupt
@@ -83,16 +94,20 @@ void Cpu6502::Reset()
   m_regs.ip = m_interruptVector.reset;
   m_cursorIp = m_regs.ip;
 
-  // Disassemble the prg bank containing the reset vector
-  for (auto& rom : m_prgRom)
+  m_currentBank = 0;
+
+  for (size_t i = 0; i < m_prgRom.size(); ++i)
   {
-    if (rom.base <= m_regs.ip && rom.base + rom.data.size() > m_regs.ip)
-    {
-      size_t diff = m_regs.ip - rom.base;
-      Disassemble(&rom.data[diff], rom.data.size() - diff, m_regs.ip, &rom.disasm);
-      break;
-    }
+    auto& rom = m_prgRom[i];
+    // If the current block contains the IP, start disassembling from the IP instead of from
+    // the start to skip trash bytes (INES header)
+    size_t ofs = m_regs.ip >= rom.base && m_regs.ip < rom.base + rom.data.size() ? m_regs.ip - rom.base : 0;
+    if (ofs > 0)
+      m_currentBank = i;
+    Disassemble(&rom.data[ofs], rom.data.size() - ofs, rom.base + ofs, &rom.disasm);
   }
+
+  return Status::OK;
 }
 
 void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
@@ -236,7 +251,7 @@ u8 Cpu6502::SingleStep()
   if (!g_validOpCodes[op8])
   {
     ++m_regs.ip;
-    return op8;
+    return 1;
   }
 
   // Load values depending on addressing mode
@@ -310,7 +325,6 @@ u8 Cpu6502::SingleStep()
     if (!flag)
     {
       m_regs.ip += (s8)lo;
-      ipUpdated = true;
     }
   };
 
@@ -318,7 +332,6 @@ u8 Cpu6502::SingleStep()
     if (flag)
     {
       m_regs.ip += (s8)lo;
-      ipUpdated = true;
     }
   };
 
@@ -746,6 +759,9 @@ u8 Cpu6502::SingleStep()
     case OpCode::NOP:
       break;
 
+    case OpCode::SED:
+      break;
+
     default:
       assert(!"IMPLEMENT ME!");
       break;
@@ -875,15 +891,7 @@ void Cpu6502::UpdateCursorPos(int delta)
 
 void Cpu6502::ToggleBreakpointAtCursor()
 {
-  auto it = m_breakpoints.find(m_cursorIp);
-  if (it == m_breakpoints.end())
-  {
-    m_breakpoints.insert(m_cursorIp);
-  }
-  else
-  {
-    m_breakpoints.erase(it);
-  }
+  m_breakpoints[m_cursorIp] = !m_breakpoints[m_cursorIp];
 
   if (FILE* f = fopen("/Users/dooz/projects/nesthing/nesthing.brk", "wt"))
   {
@@ -898,7 +906,7 @@ void Cpu6502::ToggleBreakpointAtCursor()
 
 bool Cpu6502::IpAtBreakpoint()
 {
-  return m_breakpoints.find(m_regs.ip) != m_breakpoints.end() || m_regs.ip == m_runToCursor;
+  return m_breakpoints[m_regs.ip] > 0 || m_regs.ip == m_runToCursor;
 }
 
 
@@ -980,7 +988,7 @@ void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
   text.setFont(font);
   text.setCharacterSize(16);
 
-  auto& rom = m_prgRom[currentBank];
+  auto& rom = m_prgRom[m_currentBank];
   u32 ofs = m_interruptVector.reset;
 
   // Look for the current IP in the disassemble block (ideally it should always be there..)
@@ -1000,7 +1008,7 @@ void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
   currentRect.setFillColor(Color::Transparent);
   currentRect.setOutlineColor(Color::Blue);
   currentRect.setOutlineThickness(2);
-  currentRect.setSize(sf::Vector2f(rowWidth, rowHeight));
+  currentRect.setSize(sf::Vector2f((float)rowWidth, (float)rowHeight));
 
   int startIdx = max(0, (int)(it - rom.disasm.begin()) - 10);
   int endIdx = min((int)rom.disasm.size(), startIdx + 30);
@@ -1026,7 +1034,7 @@ void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
     }
     sprintf(bufPtr, "%s", d.second.c_str());
     text.setString(buf);
-    if (m_breakpoints.find(curIp) != m_breakpoints.end())
+    if (m_breakpoints[curIp])
     {
       text.setColor(sf::Color::Red);
     }

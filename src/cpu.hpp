@@ -40,7 +40,7 @@ namespace nes
 
     void SetIp(u32 v);
     u8 SingleStep();
-    void Reset();
+    Status Reset();
 
     void Transfer(u8* dst, u8* src);
     void WriteRegisterAndFlags(u8* reg, u8 value);
@@ -91,7 +91,7 @@ namespace nes
 
     vector<PrgRom> m_prgRom;
 
-    size_t currentBank;
+    size_t m_currentBank;
 
     struct  
     {
@@ -108,7 +108,7 @@ namespace nes
 
     InterruptVectors m_interruptVector;
 
-    unordered_set<u16> m_breakpoints;
+    vector<u8> m_breakpoints;
 
     // TODO: replace with a higher level NES thing that contains both the PPU and the CPU
     PPU* m_ppu;

@@ -53,6 +53,56 @@ namespace nes
   }
 }
 
+template <typename V, typename S = V>
+struct RollingAverage
+{
+  RollingAverage(size_t numSamples)
+    : _samples(numSamples)
+    , _samplesUsed(0)
+    , _nextSample(0)
+    , _sum(0)
+  {
+  }
+
+  void AddSample(V v)
+  {
+    if (_samplesUsed < _samples.size())
+    {
+      _samples[_samplesUsed++] = v;
+      _sum += v;
+    }
+    else
+    {
+      _sum -= _samples[_nextSample];
+      _sum += v;
+      _samples[_nextSample] = v;
+      _nextSample = (_nextSample + 1) % _samples.size();
+    }
+  }
+
+  V GetAverage() const
+  {
+    return _samplesUsed == 0 ? 0 : _sum / _samplesUsed;
+  }
+
+  V GetPeak() const
+  {
+    V m = std::numeric_limits<V>::min();
+    for (size_t i = 0; i < _samplesUsed; ++i)
+    {
+      m = max(m, _samples[i]);
+    }
+    return m;
+  }
+
+  vector<V> _samples;
+  size_t _samplesUsed;
+  size_t _nextSample;
+  S _sum;
+};
+
+RollingAverage<double> s_timeElapsed(100);
+
 bool HandleKeyboardInput(const sf::Event& event)
 {
   switch (event.key.code)
@@ -87,11 +137,11 @@ bool HandleKeyboardInput(const sf::Event& event)
 
       for (size_t i = 0; i < 30*8; ++i)
       {
-        ppu.DrawScanline(image);
+        ppu.DrawScanline(i, image);
       }
 
 #if _WIN32
-            image.saveToFile("c:/temp/tjong.png");
+      image.saveToFile("c:/temp/tjong.png");
 #else
       image.saveToFile("/Users/dooz/tmp/tjong.png");
 #endif
@@ -219,6 +269,7 @@ struct Timer
     Redraw,
     CPU,
     PPU,
+    OneSecond,
     NumTimers
   };
 
@@ -285,7 +336,6 @@ struct Timer
 #endif
   u64 _lastTick[(int)Type::NumTimers];
   u64 _interval[(int)Type::NumTimers];
-
 };
 
 
@@ -304,7 +354,7 @@ int main(int argc, const char * argv[])
   u16 x;
   while (str >> hex >> x)
   {
-    cpu.m_breakpoints.insert(x);
+    cpu.m_breakpoints[x] = 1;
   }
   
   // Create the main window
@@ -324,11 +374,11 @@ int main(int argc, const char * argv[])
   }
 
   cpu.Reset();
-  cpu.RenderState(window);
+  //cpu.RenderState(window);
   window.display();
 
 #ifdef _WIN32
-  u64 lastTick = 0;
+  //u64 lastTick = 0;
 #else
   u64 lastTick = mach_absolute_time();
 #endif
@@ -339,15 +389,24 @@ int main(int argc, const char * argv[])
   timer.SetInterval(Timer::Type::Redraw, NANOSECOND/10);
 
   // master clock = 236250000 / 11
-  u64 masterClock = 236250000;
+  u64 masterClock = 39375000 / 11 * 6;
 
   timer.SetInterval(Timer::Type::CPU, NANOSECOND / (236250000 / (11 * 12)));
   timer.SetInterval(Timer::Type::PPU, NANOSECOND / (236250000 / (11 * 4)));
 
-  LARGE_INTEGER start, freq;
+  timer.SetInterval(Timer::Type::OneSecond, NANOSECOND);
+
+  LARGE_INTEGER start, freq, lastTickCtr;
   QueryPerformanceFrequency(&freq);
   QueryPerformanceCounter(&start);
+  QueryPerformanceCounter(&lastTickCtr);
 
+  u64 lastTick = lastTickCtr.QuadPart / freq.QuadPart;
+
+  u64 ticksPerSecond = 50;
+  u64 tickIntervalCtr = freq.QuadPart / ticksPerSecond;
+  u64 masterClocksPerTick = masterClock / ticksPerSecond;
+  u64 masterClocksLastTick = 0;
 
   bool done = false;
   bool swapped = false;
@@ -358,70 +417,87 @@ int main(int argc, const char * argv[])
     {
       tickCount++;
 
-      if ((tickCount % 1000000) == 0)
-      {
-        LARGE_INTEGER now;
-        QueryPerformanceCounter(&now);
-        double dd = (now.QuadPart - start.QuadPart) / (double)freq.QuadPart;
-        printf("%lf\n", tickCount / dd);
-        tickCount = 0;
-        start = now;
-      }
+      LARGE_INTEGER nowCtr;
+      QueryPerformanceCounter(&nowCtr);
+      double diff = (double)(nowCtr.QuadPart - lastTickCtr.QuadPart) / tickIntervalCtr;
+      s_timeElapsed.AddSample(diff);
 
       size_t elapsedTimers[Timer::Type::NumTimers];
       timer.Elapsed(elapsedTimers);
-      if (elapsedTimers[(size_t)Timer::Type::Redraw] > 0)
+
+      if (elapsedTimers[(size_t)Timer::Type::OneSecond])
+      {
+        printf("avg: %f (peak: %f)\n", s_timeElapsed.GetAverage(), s_timeElapsed.GetPeak());
+      }
+
+      if ((u64)(nowCtr.QuadPart - lastTickCtr.QuadPart) > tickIntervalCtr)
+      {
+        // number of ticks until next cpu instruction can be executed
+        size_t tickDelay = 0;
+        // Do master ticks. 3 ppu ticks per cpu tick
+        for (size_t i = 0; i < masterClocksPerTick/4; ++i)
+        {
+          for (size_t j = 0; j < 3; ++j)
+          {
+            ppu.Tick();
+            if (ppu.TriggerNmi())
+            {
+              cpu.ExecuteNmi();
+            }
+          }
+
+          // check if the CPU has finished its previous instruction
+          if (tickDelay == 0)
+          {
+            tickDelay = cpu.SingleStep();
+
+            // update these guys to break
+            if (runUntilReturn)
+            {
+              OpCode op = cpu.PeekOp();
+              if (op == OpCode::RTS || op == OpCode::RTI)
+              {
+                runUntilReturn = false;
+              }
+            }
+            if (runUntilBranch)
+            {
+              OpCode op = cpu.PeekOp();
+              if (g_branchingOpCodes[(u8)op])
+              {
+                runUntilBranch = false;
+              }
+            }
+
+            if (cpu.IpAtBreakpoint())
+            {
+              runUntilBranch = false;
+              runUntilReturn = false;
+              executing = false;
+            }
+          }
+          else
+          {
+            tickDelay--;
+          }
+        }
+        lastTickCtr = nowCtr;
+      }
+
+      if (elapsedTimers[(int)Timer::Type::Redraw])
       {
         window.clear();
         cpu.RenderState(window);
         window.display();
       }
 
-      if (!swapped)
+      if (elapsedTimers[(int)Timer::Type::EventPoll])
       {
-        if (elapsedTimers[(size_t)Timer::Type::EventPoll] > 0)
+        window.pollEvent(event);
+        if (event.type == sf::Event::KeyReleased)
         {
-          window.pollEvent(event);
-          if (event.type == sf::Event::KeyReleased)
-          {
-            done = HandleKeyboardInput(event);
-          }
+          done = HandleKeyboardInput(event);
         }
-      }
-      swapped = false;
-
-      for (size_t i = 0, e = elapsedTimers[(size_t)Timer::Type::CPU]; i < e; ++i)
-      {
-        cpu.Tick();
-      }
-
-      for (size_t i = 0, e = elapsedTimers[(size_t)Timer::Type::PPU]; i < e; ++i)
-      {
-        ppu.Tick();
-      }
-
-      if (runUntilReturn)
-      {
-        OpCode op = cpu.PeekOp();
-        if (op == OpCode::RTS || op == OpCode::RTI)
-        {
-          runUntilReturn = false;
-        }
-      }
-      if (runUntilBranch)
-      {
-        OpCode op = cpu.PeekOp();
-        if (g_branchingOpCodes[(u8)op])
-        {
-          runUntilBranch = false;
-        }
-      }
-
-      if (cpu.IpAtBreakpoint())
-      {
-        runUntilBranch = false;
-        runUntilReturn = false;
-        executing = false;
       }
     }
     else

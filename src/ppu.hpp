@@ -32,10 +32,12 @@ namespace nes
     void DumpVRom();
     void ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* patternTable, Image* image);
 
-    void DrawScanline(sf::Image& image);
+    void DrawScanline(int scanline, sf::Image& image);
 
     void SetControl1(u8 value);
     void SetControl2(u8 value);
+
+    bool TriggerNmi();
 
     union
     {
@@ -139,9 +141,11 @@ namespace nes
     u8 m_spriteTableIdx;
 
     u16 m_curScanline;
+    u16 m_scanlineTick;
     u16 m_curCycle;
     u8 m_memoryAccessCycle;
     u8 m_OamIdx;
+    bool m_triggerNmi;
   };
 
 }

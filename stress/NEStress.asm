@@ -118,7 +118,7 @@ Reset_Routine  SUBROUTINE
 ;Title Screen
 .TitleMain
    lda   #$02
-   sta   GAMESCREEN        ;Set CHR-ROM for mapper 3??
+   sta   GAMESCREEN     ; set title screen
 
 TITLESCROLL   EQU   $0000
 TITLESCROLL1  EQU   $0001
@@ -138,7 +138,7 @@ BUTTONDOWN    EQU   $0006
 
    lda   #$00
    sta   $2003
-   lda   #$4E              ;Copy sprite to SPR-RAM?
+   lda   #$4E              
    sta   $0700
    lda   #$01
    sta   $0701

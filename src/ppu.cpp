@@ -4,60 +4,6 @@
 using namespace nes;
 #define DUMP_TO_STDOUT 0
 
-//  |  $2000  | PPU Control Register #1 (W)                              |
-//  |         |                                                          |
-//  |         |    D7: Execute NMI on VBlank                             |
-//  |         |           0 = Disabled                                   |
-//  |         |           1 = Enabled                                    |
-//  |         |    D6: PPU Master/Slave Selection --+                    |
-//  |         |           0 = Master                +-- UNUSED           |
-//  |         |           1 = Slave               --+                    |
-//  |         |    D5: Sprite Size                                       |
-//  |         |           0 = 8x8                                        |
-//  |         |           1 = 8x16                                       |
-//  |         |    D4: Background Pattern Table Address                  |
-//  |         |           0 = $0000 (VRAM)                               |
-//  |         |           1 = $1000 (VRAM)                               |
-//  |         |    D3: Sprite Pattern Table Address                      |
-//  |         |           0 = $0000 (VRAM)                               |
-//  |         |           1 = $1000 (VRAM)                               |
-//  |         |    D2: PPU Address Increment                             |
-//  |         |           0 = Increment by 1                             |
-//  |         |           1 = Increment by 32                            |
-//  |         | D1-D0: Name Table Address                                |
-//  |         |         00 = $2000 (VRAM)                                |
-//  |         |         01 = $2400 (VRAM)                                |
-//  |         |         10 = $2800 (VRAM)                                |
-//  |         |         11 = $2C00 (VRAM)                                |
-//  +---------+----------------------------------------------------------+
-//  |  $2001  | PPU Control Register #2 (W)                              |
-//  |         |                                                          |
-//  |         | D7-D5: Full Background Colour (when D0 == 1)             |
-//  |         |         000 = None  +------------+                       |
-//  |         |         001 = Green              | NOTE: Do not use more |
-//  |         |         010 = Blue               |       than one type   |
-//  |         |         100 = Red   +------------+                       |
-//  |         | D7-D5: Colour Intensity (when D0 == 0)                   |
-//  |         |         000 = None            +--+                       |
-//  |         |         001 = Intensify green    | NOTE: Do not use more |
-//  |         |         010 = Intensify blue     |       than one type   |
-//  |         |         100 = Intensify red   +--+                       |
-//  |         |    D4: Sprite Visibility                                 |
-//  |         |           0 = Sprites not displayed                      |
-//  |         |           1 = Sprites visible                            |
-//  |         |    D3: Background Visibility                             |
-//  |         |           0 = Background not displayed                   |
-//  |         |           1 = Background visible                         |
-//  |         |    D2: Sprite Clipping                                   |
-//  |         |           0 = Sprites invisible in left 8-pixel column   |
-//  |         |           1 = No clipping                                |
-//  |         |    D1: Background Clipping                               |
-//  |         |           0 = BG invisible in left 8-pixel column        |
-//  |         |           1 = No clipping                                |
-//  |         |    D0: Display Type                                      |
-//  |         |           0 = Colour display                             |
-//  |         |           1 = Monochrome display
-
 PPU::PPU()
   : m_hiLoLatch(true)
   , m_writeAddr(0)
@@ -72,8 +18,9 @@ PPU::PPU()
   , m_nameTableAddr(0x2000)
   , m_backgroundTableIdx(0)
   , m_spriteTableIdx(0)
-  , m_curScanline(1)
-  , m_curCycle(1)
+  , m_curScanline(0)
+  , m_scanlineTick(0)
+  , m_curCycle(0)
   , m_memoryAccessCycle(0)
   , m_OamIdx(0)
 {
@@ -86,101 +33,39 @@ PPU::PPU()
 
 void PPU::Tick()
 {
-  return;
-  u16 cycle = m_curCycle++;
+  // The PPU is ticked every 4th master clock cycle
 
-  // The PPU is ticked for each master clock cycle, and not each PPU clock cycle. This is because
-  // the timing is based on memory reads, where each read takes 2 master clock cycles
-  bool renderingDisabled = m_control2.backgroundVisbility == 0 && m_control2.spriteVisibility == 0;
-  if (!renderingDisabled)
+  // turn vblank off?
+  if (m_scanlineTick == 1 && m_curScanline == 261)
   {
-    // Check for end of scanline
-    if (cycle >= 1360)
-    {
-      // The first scanline of even odd frame is 4 cycles shorter
-      if ((!m_evenFrame && m_curScanline == 1) || cycle == 1364)
-      {
-        ++m_curScanline;
-        m_curCycle = 1;
-        return;
-      }
-    }
-
-    if (cycle <= 128 * 8)
-    {
-      switch (cycle & 7)
-      {
-      case 1:
-        // Fetch name table
-        break;
-
-      case 3:
-        // Fetch attribute table
-        break;
-
-      case 5:
-        // Fetch pattern table
-        break;
-
-      case 7:
-        // Fetch pattern table
-        break;
-      }
-    }
-
-    if (cycle <= 64 * 4)
-    {
-      // Clear secondary OAM
-      if (!(cycle & 7))
-      {
-        m_secondaryOamRaw[cycle/8] = 0xff;
-      }
-    }
-
-
-    if (m_curCycle == 342)
-    {
-      m_curCycle = 0;
-      ++m_curScanline;
-    }
-
-    if (m_curScanline == 262)
-    {
-      // Done with the current frame
-      m_evenFrame = !m_evenFrame;
-      m_status.vblank = 1;
-    }
-    else
-    {
-      if (m_curCycle == 0)
-      {
-        // idle cycle
-      }
-      else if (m_curCycle >=1 && m_curCycle <= 256)
-      {
-
-      }
-      else if (m_curCycle >= 257 && m_curCycle <= 320)
-      {
-
-      }
-      else if (m_curCycle >= 321 && m_curCycle <= 336)
-      {
-
-      }
-      else if (m_curCycle >= 337 && m_curCycle <= 340)
-      {
-
-      }
-
-    }
+    m_status.vblank = 0;
   }
 
-  ++m_curCycle;
+  // turn vblank on?
+  if (m_scanlineTick == 1 && m_curScanline == 241)
+  {
+    m_triggerNmi = m_control1.nmiOnVBlank > 0 ;
+    m_status.vblank = 1;
+  }
 
+  // each scan line is 341 ticks, except for line 0 every odd frame
+  u16 ticksOnScanline = m_curScanline == 0 && !m_evenFrame ? 340 : 341;
+  if (m_scanlineTick == ticksOnScanline)
+  {
+    if (m_curScanline++ == 262)
+    {
+      m_curScanline = 0;
+    }
+
+    m_scanlineTick = 0;
+  }
+  else
+  {
+    m_scanlineTick++;
+  }
 }
 
-void PPU::DrawScanline(sf::Image& image)
+void PPU::DrawScanline(int scanline, sf::Image& image)
 {
   // Background
   // 32x30 tiles (8x8)
@@ -193,14 +78,9 @@ void PPU::DrawScanline(sf::Image& image)
     u8 sprite = nameTable[tileY*32+i];
     for (int j = 0; j < 8; ++j)
     {
-      u8 pixel = m_patternTable[m_backgroundTableIdx].sprites[sprite].data[(m_curScanline&7)*8+j];
-      image.setPixel(i*8+j, m_curScanline, sf::Color(g_NesPalette[pixel*3+0], g_NesPalette[pixel*3+1], g_NesPalette[pixel*3+2]));
+      u8 pixel = m_patternTable[m_backgroundTableIdx].sprites[sprite].data[(scanline&7)*8+j];
+      image.setPixel(i*8+j, scanline, sf::Color(g_NesPalette[pixel*3+0], g_NesPalette[pixel*3+1], g_NesPalette[pixel*3+2]));
     }
-  }
-
-  if (++m_curScanline == 30*8)
-  {
-    m_curScanline = 0;
   }
 
   // Sprite
@@ -321,8 +201,7 @@ u8 PPU::ReadMemory(u16 addr)
 
     // Reset vblank bit
     u8 tmp = m_status.reg;
-    // HACK
-    m_status.vblank = !m_status.vblank;
+    m_status.vblank = 0;
     return tmp;
   }
   else if (addr == 0x2007)
@@ -396,4 +275,11 @@ void PPU::DumpVRom()
   image.saveToFile("c:/temp/pattern_table0.png");
   ProcessPatternTable(&m_memory[256*16], 256, &m_patternTable[1], &image);
   image.saveToFile("c:/temp/pattern_table1.png");
+}
+
+bool PPU::TriggerNmi()
+{
+  bool tmp = m_triggerNmi;
+  m_triggerNmi = false;
+  return tmp;
 }

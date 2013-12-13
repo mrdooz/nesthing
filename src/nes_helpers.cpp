@@ -179,22 +179,31 @@ namespace nes
     char buf[512];
 
     u32 ip = 0;
-//    u32 prevIp = 0;
 
     while (ip < len)
     {
       u8 op = data[ip];
-//      prevIp = ip;
       if (g_validOpCodes[op])
       {
         u32 nextIp = ip + g_instrLength[op];
-        output->push_back(make_pair(ip+org, OpCodeToString(OpCode(op), nextIp + org, &data[ip+1])));
-        //sprintf(buf, "%.4x    %s", ip + org, OpCodeToString(OpCode(op), nextIp + org, &data[ip+1]));
+        string str(OpCodeToString(OpCode(op), nextIp + org, &data[ip+1]));
+        // add binary rep if in immediate mode
+        if ((AddressingMode)g_addressingModes[op] == AddressingMode::IMM)
+        {
+          char bin[9];
+          u8 d = data[ip+1];
+          for (size_t i = 0; i < 8; ++i)
+          {
+            bin[i] = (d >> (7-i)) % 2 ? '1' : '0';
+          }
+          bin[8] = 0;
+          str += ToString("   ; %s", bin);
+        }
+        output->push_back(make_pair(ip+org, str));
         ip = nextIp;
       }
       else
       {
-        //      sprintf(buf, "%.4x    db %.2x", ip + org, op);
         sprintf(buf, "db %.2x", op);
         output->push_back(make_pair(ip+org, buf));
         ++ip;

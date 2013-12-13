@@ -46,6 +46,8 @@ namespace nes
     INVALID_MAPPER_VERSION,
     FONT_NOT_FOUND,
 
+    ERROR_LOADING_ROM,
+
     FILE_NOT_FOUND,
     FILE_READ_ERROR,
   };
