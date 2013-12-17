@@ -4,6 +4,28 @@
 using namespace nes;
 #define DUMP_TO_STDOUT 0
 
+// PPU memory map
+//Address   Size    Description
+//$0000     $1000   Pattern Table 0
+//$1000     $1000   Pattern Table 1
+//$2000     $3C0    Name Table 0
+//$23C0     $40     Attribute Table 0
+//$2400     $3C0    Name Table 1
+//$27C0     $40     Attribute Table 1
+//$2800     $3C0    Name Table 2
+//$2BC0     $40     Attribute Table 2
+//$2C00     $3C0    Name Table 3
+//$2FC0     $40     Attribute Table 3
+//$3000     $F00    Mirror of 2000h-2EFFh
+//$3F00     $10     BG Palette
+//$3F10     $10     Sprite Palette
+//$3F20     $E0     Mirror of 3F00h-3F1Fh
+
+namespace
+{
+  size_t MEMORY_SIZE = 16 * 1024;
+}
+
 PPU::PPU()
   : m_hiLoLatch(true)
   , m_writeAddr(0)
@@ -13,6 +35,7 @@ PPU::PPU()
   , m_evenFrame(true)
   , m_hscroll(0)
   , m_vscroll(0)
+  , m_memory(MEMORY_SIZE)
   , m_backgroundTableAddr(0)
   , m_spriteTableAddr(0)
   , m_nameTableAddr(0x2000)
@@ -24,7 +47,6 @@ PPU::PPU()
   , m_memoryAccessCycle(0)
   , m_OamIdx(0)
 {
-  m_memory.resize(16*1024);
   m_nameTable[0] = 0x2000;
   m_nameTable[1] = 0x2400;
   m_nameTable[2] = 0x2800;
@@ -72,7 +94,6 @@ void PPU::DrawScanline(int scanline, sf::Image& image)
   int tileY = m_curScanline / 8;
 
   u8* nameTable = &m_memory[m_nameTableAddr];
-  //  u8* base = &m_memory[m_nameTableAddr];
   for (int i = 0; i < 32; ++i)
   {
     u8 sprite = nameTable[tileY*32+i];
@@ -89,34 +110,18 @@ void PPU::DrawScanline(int scanline, sf::Image& image)
 void PPU::SetControl1(u8 value)
 {
   m_control1.reg = value;
-  if (m_control1.backgroundPatterTableAddr)
-  {
-    m_backgroundTableAddr = 0x1000;
-    m_backgroundTableIdx = 1;
-  }
-  else
-  {
-    m_backgroundTableAddr = 0;
-    m_backgroundTableIdx = 0;
-  }
+  m_backgroundTableAddr = m_control1.backgroundPatterTableAddr ? 0x1000 : 0;
+  m_backgroundTableIdx  = m_control1.backgroundPatterTableAddr ? 1 : 0;
 
-  if (m_control1.spritePatternTableAddr)
-  {
-    m_spriteTableAddr = 0x1000;
-    m_spriteTableIdx = 1;
-  }
-  else
-  {
-    m_spriteTableAddr = 0;
-    m_spriteTableIdx = 0;
-  }
+  m_spriteTableAddr = m_control1.spritePatternTableAddr ? 0x1000 : 0;
+  m_spriteTableIdx  = m_control1.spritePatternTableAddr ? 1 : 0;
 
   switch (m_control1.nameTableAddr)
   {
-  case 0: m_nameTableAddr = 0x2000; break;
-  case 1: m_nameTableAddr = 0x2400; break;
-  case 2: m_nameTableAddr = 0x2800; break;
-  case 3: m_nameTableAddr = 0x2c00; break;
+    case 0: m_nameTableAddr = 0x2000; break;
+    case 1: m_nameTableAddr = 0x2400; break;
+    case 2: m_nameTableAddr = 0x2800; break;
+    case 3: m_nameTableAddr = 0x2c00; break;
   }
 }
 
@@ -127,6 +132,9 @@ void PPU::SetControl2(u8 value)
 
 void PPU::WriteMemory(u16 addr, u8 value)
 {
+  // only the lower 14 bits of addr are used
+  addr = addr & 0x3fff;
+
   // 0x2000 - 0x2007 is mirrored between 0x2008 -> 0x3fff
   switch (0x2000 + (addr & 0x7))
   {
@@ -212,12 +220,13 @@ u8 PPU::ReadMemory(u16 addr)
   return 0;
 }
 
-void PPU::ProcessPatternTable(const u8* data, size_t numTiles, PatternTable* patternTable, Image* image)
+void PPU::CreatePatternTable(const u8* data, size_t numTiles, PatternTable* patternTable, Image* image)
 {
   // dump a tile bank
   for (size_t i = 0; i < numTiles; ++i)
   {
-    // each tile is 16 bytes (8 per layer)
+    // each tile is 8x8 pixels.
+    // the tile is split into 2 layers. each layer hold 1 bit for each pixel
     u8 layer0[8];
     u8 layer1[8];
     memcpy(layer0, &data[i*16+0], 8);
@@ -271,9 +280,9 @@ void PPU::DumpVRom()
 {
   Image image;
   image.create(16*8, 16*8);
-  ProcessPatternTable(&m_memory[0], 256, &m_patternTable[0], &image);
+  CreatePatternTable(&m_memory[0], 256, &m_patternTable[0], &image);
   image.saveToFile("c:/temp/pattern_table0.png");
-  ProcessPatternTable(&m_memory[256*16], 256, &m_patternTable[1], &image);
+  CreatePatternTable(&m_memory[256*16], 256, &m_patternTable[1], &image);
   image.saveToFile("c:/temp/pattern_table1.png");
 }
 

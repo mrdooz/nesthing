@@ -123,6 +123,9 @@ namespace nes
     bool m_loadButtonStates;
     u8 m_buttonState[8];
     u8 m_buttonIdx;
+
+    u16 m_dmaReadAddr;
+    u16 m_dmaBytesLeft;
   };
 }
 

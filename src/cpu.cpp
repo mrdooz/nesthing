@@ -27,6 +27,7 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   , m_loadButtonStates(false)
   , m_buttonIdx(0)
   , m_runToCursor(~0)
+  , m_dmaBytesLeft(0)
 {
   memset(&m_flags, 0, sizeof(m_flags));
   memset(&m_regs, 0, sizeof(m_regs));
@@ -74,10 +75,12 @@ Status Cpu6502::Reset()
 
   if (m_prgRom.size() == 1)
   {
-    memcpy(&m_memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
-    memcpy(&m_memory[0xc000], &m_prgRom[0].data[0], 16 * 1024);
+    // copy the ROM at 0x8000 to 0xc000
+    m_prgRom.push_back(m_prgRom.front());
+    m_prgRom.back().base = 0xc000;
   }
-  else if (m_prgRom.size() == 2)
+
+  if (m_prgRom.size() == 2)
   {
     memcpy(&m_memory[0x8000], &m_prgRom[0].data[0], 16 * 1024);
     memcpy(&m_memory[0xC000], &m_prgRom[1].data[0], 16 * 1024);
@@ -154,11 +157,10 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
     switch (addr)
     {
     case 0x4014:
-      // Transfer 256 bytes to SPR-RAM
-      for (size_t i = 0; i < 256; ++i)
-      {
-        m_ppu->WriteMemory(0x2004, m_memory[0x100 * (u16)value + i]);
-      }
+      // Enter DMA mode (writes 256 bytes to 0x2004, 2 bytes per cycle)
+      // and write the first byte
+      m_dmaReadAddr = 0x100 * (u16)value;
+      m_dmaBytesLeft = 256;
       break;
 
       case 0x4016:
@@ -246,6 +248,15 @@ u8 Cpu6502::Pop8()
 
 u8 Cpu6502::SingleStep()
 {
+  // If in a DMA transfer, just do the transfer
+  if (m_dmaBytesLeft)
+  {
+    m_ppu->WriteMemory(0x2004, m_memory[m_dmaReadAddr++]);
+    m_dmaBytesLeft--;
+    // 2 ticks for a DMA byte transfer
+    return 2;
+  }
+
   u8 op8 = m_memory[m_regs.ip];
   OpCode op = (OpCode)op8;
   if (!g_validOpCodes[op8])
