@@ -49,6 +49,7 @@ void Cpu6502::ExecuteNmi()
     return;
   }
 
+  // TODO: proper NMI handling (pushing cpu regs on stack etc)
   m_storedIp = m_regs.ip;
   m_storedFlags = m_flags.reg;
   m_regs.ip = m_interruptVector.nmi;
@@ -87,7 +88,7 @@ Status Cpu6502::Reset()
   }
   else
   {
-    LOG("Invalid PRG-ROM count: %d", m_prgRom.size());
+    LOG("Invalid PRG-ROM count: %lu", m_prgRom.size());
     return Status::ERROR_LOADING_ROM;
   }
 
@@ -161,6 +162,8 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
       // and write the first byte
       m_dmaReadAddr = 0x100 * (u16)value;
       m_dmaBytesLeft = 256;
+      // HACK: write to 2003 to reset the ppu sprite offset
+       m_ppu->WriteMemory(0x2003, 0);
       break;
 
       case 0x4016:

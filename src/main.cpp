@@ -39,11 +39,11 @@ namespace nes
   {
     u64 NANOSECOND = 1000000000;
   }
-  PPU ppu;
-  MMC1 mmc1;
-  Cpu6502 cpu(&ppu, &mmc1);
+  PPU g_ppu;
+  MMC1 g_mmc1;
+  Cpu6502 g_cpu(&g_ppu, &g_mmc1);
 
-  bool executing = true;
+  bool executing = false;
   bool runUntilReturn = false;
   bool runUntilBranch = false;
 
@@ -120,9 +120,9 @@ bool HandleKeyboardInput(const sf::Event& event)
 
     case sf::Keyboard::D:
     {
-      if (!cpu.m_prgRom.empty())
+      if (!g_cpu.m_prgRom.empty())
       {
-        for (auto& d : cpu.m_prgRom[0].disasm)
+        for (auto& d : g_cpu.m_prgRom[0].disasm)
         {
           printf("%.4x  %s\n", d.first, d.second.c_str());
         }
@@ -137,7 +137,7 @@ bool HandleKeyboardInput(const sf::Event& event)
 
       for (size_t i = 0; i < 30*8; ++i)
       {
-        ppu.DrawScanline(i, image);
+        g_ppu.DrawScanline(i, image);
       }
 
 #if _WIN32
@@ -155,12 +155,12 @@ bool HandleKeyboardInput(const sf::Event& event)
     }
 
     case sf::Keyboard::Z:
-      cpu.m_flags.z ^= cpu.m_flags.z;
+      g_cpu.m_flags.z ^= g_cpu.m_flags.z;
       break;
 
     case sf::Keyboard::R:
     {
-      cpu.Reset();
+      g_cpu.Reset();
       break;
     }
 
@@ -171,48 +171,48 @@ bool HandleKeyboardInput(const sf::Event& event)
 
     case sf::Keyboard::F11:
     case sf::Keyboard::F7:
-      cpu.SingleStep();
+      g_cpu.SingleStep();
       break;
 
     case sf::Keyboard::F9:
-      cpu.ToggleBreakpointAtCursor();
+      g_cpu.ToggleBreakpointAtCursor();
       break;
 
     case sf::Keyboard::F10:
       if (event.key.shift)
       {
-        cpu.RunToCursor();
+        g_cpu.RunToCursor();
         executing = true;
       }
       break;
 
     case sf::Keyboard::PageUp:
     {
-      cpu.disasmOfs -= 20;
+      g_cpu.disasmOfs -= 20;
       break;
     }
 
     case sf::Keyboard::Up:
     {
-      cpu.UpdateCursorPos(-1);
+      g_cpu.UpdateCursorPos(-1);
       break;
     }
 
     case sf::Keyboard::Down:
     {
-      cpu.UpdateCursorPos(1);
+      g_cpu.UpdateCursorPos(1);
       break;
     }
 
     case sf::Keyboard::PageDown:
     {
-      cpu.disasmOfs += 20;
+      g_cpu.disasmOfs += 20;
       break;
     }
 
     case sf::Keyboard::Home:
     {
-      cpu.disasmOfs = 0;
+      g_cpu.disasmOfs = 0;
       break;
     }
 
@@ -222,13 +222,13 @@ bool HandleKeyboardInput(const sf::Event& event)
 
     case sf::Keyboard::J:
     {
-      cpu.m_memoryOfs += 10 * 16;
+      g_cpu.m_memoryOfs += 10 * 16;
       break;
     }
 
     case sf::Keyboard::K:
     {
-      cpu.m_memoryOfs -= 10 * 16;
+      g_cpu.m_memoryOfs -= 10 * 16;
       break;
     }
 
@@ -259,6 +259,14 @@ bool FindRoot()
     prev = tmp;
   }
   return false;
+}
+
+u64 NowNanoseconds()
+{
+  u64 now = mach_absolute_time();
+  Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&now);
+  u64 nowNs = *(u64*)&deltaNsTmp;
+  return nowNs;
 }
 
 struct Timer
@@ -310,6 +318,9 @@ struct Timer
     // iterate all the timers, and calc number of ticks for each one
     for (size_t i = 0; i < numTimers; ++i)
     {
+      if (_interval[i] == 0)
+        continue;
+
       u64 lastTick = _lastTick[i];
       u64 delta = now - lastTick;
 #ifdef _WIN32
@@ -338,6 +349,114 @@ struct Timer
   u64 _interval[(int)Type::NumTimers];
 };
 
+int main2(int argc, const char* argv[])
+{
+  Timer timer;
+  timer.SetInterval(Timer::Type::OneSecond, NANOSECOND);
+
+  Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
+  if (status != Status::OK)
+  {
+    printf("error loading rom: %s\n", argv[1]);
+    return (int)status;
+  }
+
+  g_cpu.Reset();
+
+
+  // NTSC subcarrier frequency: 39375000 / 11
+  // The master clock frequency is 6 times the subcarrier frequency
+  // see http://wiki.nesdev.com/w/index.php/Overscan
+  u64 masterClock = 39375000 / 11 * 6;
+
+  // ns between master, ppu and cpu ticks
+  double mcPeriod_ns = 1e9 / masterClock;
+  double ppuPeriod_ns = 1e9 / (masterClock / 4);
+  double cpuPeriod_ns = 1e9 / (masterClock / 12);
+
+  // keep track of accumulated time to know when to tick ppu/cpu
+  double ppuAcc_ns = 0;
+  double cpuAcc_ns = 0;
+  double mcAcc_ns = 0;
+
+  double elapsedTime_ns = 0;
+
+  u64 lastTick_ns = NowNanoseconds();
+  u64 totalTicks = 0;
+  u64 mcTicks = 0;
+  u64 cpuTicks = 0;
+  u64 ppuTicks = 0;
+
+  // cpu cylces until the currently running instruction is done
+  u32 cpuDelay = 0;
+  RollingAverage<double> avgTick(1000);
+  while (true)
+  {
+    u64 now_ns = NowNanoseconds();
+    double delta_ns = now_ns - lastTick_ns;
+    avgTick.AddSample(delta_ns);
+    lastTick_ns = now_ns;
+    elapsedTime_ns += delta_ns;
+
+    mcAcc_ns += delta_ns;
+    ppuAcc_ns += delta_ns;
+    cpuAcc_ns += delta_ns;
+
+    while (ppuAcc_ns > ppuPeriod_ns)
+    {
+      g_ppu.Tick();
+      ppuAcc_ns -= ppuPeriod_ns;
+      ++ppuTicks;
+
+      if (g_ppu.TriggerNmi())
+      {
+        g_cpu.ExecuteNmi();
+      }
+    }
+
+    while (cpuAcc_ns > cpuPeriod_ns)
+    {
+      // Is there any currently executing CPU instruction?
+      if (cpuDelay > 0)
+        --cpuDelay;
+
+      if (cpuDelay == 0)
+        g_cpu.Tick();
+
+      cpuAcc_ns -= cpuPeriod_ns;
+      ++cpuTicks;
+    }
+
+    while (mcAcc_ns > mcPeriod_ns)
+    {
+      mcAcc_ns -= mcPeriod_ns;
+      ++mcTicks;
+    }
+
+    ++totalTicks;
+
+    // add the time delta to the timers
+    s_timeElapsed.AddSample(delta_ns);
+
+    size_t elapsedTimers[(int)Timer::Type::NumTimers];
+    timer.Elapsed(elapsedTimers);
+
+    if (elapsedTimers[(size_t)Timer::Type::OneSecond])
+    {
+      printf("ratio master: %f\nratio cpu: %f\nratio ppu: %f\navg: %f\n",
+          (double)mcTicks / totalTicks,
+          (double)cpuTicks / totalTicks,
+          (double)ppuTicks / totalTicks,
+          avgTick.GetAverage());
+    }
+
+//    if (elapsedTime_ns > 10 * 1e9)
+//      break;
+  }
+
+  return 0;
+
+}
 
 int main(int argc, const char * argv[])
 {
@@ -354,27 +473,29 @@ int main(int argc, const char * argv[])
   u16 x;
   while (str >> hex >> x)
   {
-    cpu.m_breakpoints[x] = 1;
+    g_cpu.m_breakpoints[x] = 1;
   }
-  
+
+  sf::RenderWindow tileWindow(sf::VideoMode(256, 256, 32), "Tilesets");
+
   // Create the main window
   sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
   window.setVerticalSyncEnabled(true);
+
 
   if (argc < 2)
   {
     return 1;
   }
   
-  Status status = LoadINes(argv[1], &cpu, &ppu);
+  Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
     printf("error loading rom: %s\n", argv[1]);
     return (int)status;
   }
 
-  cpu.Reset();
-  //cpu.RenderState(window);
+  g_cpu.Reset();
   window.display();
 
 #ifdef _WIN32
@@ -388,7 +509,6 @@ int main(int argc, const char * argv[])
   timer.SetInterval(Timer::Type::EventPoll, NANOSECOND/60);
   timer.SetInterval(Timer::Type::Redraw, NANOSECOND/10);
 
-  // master clock = 236250000 / 11
   u64 masterClock = 39375000 / 11 * 6;
 
   timer.SetInterval(Timer::Type::CPU, NANOSECOND / (236250000 / (11 * 12)));
@@ -396,20 +516,24 @@ int main(int argc, const char * argv[])
 
   timer.SetInterval(Timer::Type::OneSecond, NANOSECOND);
 
+ #ifdef _WIN32
   LARGE_INTEGER start, freq, lastTickCtr;
   QueryPerformanceFrequency(&freq);
   QueryPerformanceCounter(&start);
   QueryPerformanceCounter(&lastTickCtr);
 
   u64 lastTick = lastTickCtr.QuadPart / freq.QuadPart;
+  u64 tickIntervalCtr = freq.QuadPart / ticksPerSecond;
+#endif
 
   u64 ticksPerSecond = 50;
-  u64 tickIntervalCtr = freq.QuadPart / ticksPerSecond;
+  double tickInterval = 1.0 / ticksPerSecond;
   u64 masterClocksPerTick = masterClock / ticksPerSecond;
   u64 masterClocksLastTick = 0;
 
   bool done = false;
   bool swapped = false;
+  u64 prevNs = NowNanoseconds();
   while (!done)
   {
     sf::Event event;
@@ -417,12 +541,17 @@ int main(int argc, const char * argv[])
     {
       tickCount++;
 
+#ifdef _WIN32
       LARGE_INTEGER nowCtr;
       QueryPerformanceCounter(&nowCtr);
       double diff = (double)(nowCtr.QuadPart - lastTickCtr.QuadPart) / tickIntervalCtr;
+#endif
+      u64 nowNs = NowNanoseconds();
+      double diff = (nowNs - prevNs) / 1e9;
+      prevNs = nowNs;
       s_timeElapsed.AddSample(diff);
 
-      size_t elapsedTimers[Timer::Type::NumTimers];
+      size_t elapsedTimers[(int)Timer::Type::NumTimers];
       timer.Elapsed(elapsedTimers);
 
       if (elapsedTimers[(size_t)Timer::Type::OneSecond])
@@ -430,7 +559,8 @@ int main(int argc, const char * argv[])
         printf("avg: %f (peak: %f)\n", s_timeElapsed.GetAverage(), s_timeElapsed.GetPeak());
       }
 
-      if ((u64)(nowCtr.QuadPart - lastTickCtr.QuadPart) > tickIntervalCtr)
+      if (diff > tickInterval)
+//      if ((u64)(nowCtr.QuadPart - lastTickCtr.QuadPart) > tickIntervalCtr)
       {
         // number of ticks until next cpu instruction can be executed
         size_t tickDelay = 0;
@@ -439,22 +569,22 @@ int main(int argc, const char * argv[])
         {
           for (size_t j = 0; j < 3; ++j)
           {
-            ppu.Tick();
-            if (ppu.TriggerNmi())
+            g_ppu.Tick();
+            if (g_ppu.TriggerNmi())
             {
-              cpu.ExecuteNmi();
+              g_cpu.ExecuteNmi();
             }
           }
 
           // check if the CPU has finished its previous instruction
           if (tickDelay == 0)
           {
-            tickDelay = cpu.SingleStep();
+            tickDelay = g_cpu.SingleStep();
 
             // update these guys to break
             if (runUntilReturn)
             {
-              OpCode op = cpu.PeekOp();
+              OpCode op = g_cpu.PeekOp();
               if (op == OpCode::RTS || op == OpCode::RTI)
               {
                 runUntilReturn = false;
@@ -462,14 +592,14 @@ int main(int argc, const char * argv[])
             }
             if (runUntilBranch)
             {
-              OpCode op = cpu.PeekOp();
+              OpCode op = g_cpu.PeekOp();
               if (g_branchingOpCodes[(u8)op])
               {
                 runUntilBranch = false;
               }
             }
 
-            if (cpu.IpAtBreakpoint())
+            if (g_cpu.IpAtBreakpoint())
             {
               runUntilBranch = false;
               runUntilReturn = false;
@@ -481,13 +611,13 @@ int main(int argc, const char * argv[])
             tickDelay--;
           }
         }
-        lastTickCtr = nowCtr;
+        //lastTickCtr = nowCtr;
       }
 
       if (elapsedTimers[(int)Timer::Type::Redraw])
       {
         window.clear();
-        cpu.RenderState(window);
+        g_cpu.RenderState(window);
         window.display();
       }
 
@@ -503,7 +633,7 @@ int main(int argc, const char * argv[])
     else
     {
       window.clear();
-      cpu.RenderState(window);
+      g_cpu.RenderState(window);
       window.display();
 
       window.waitEvent(event);

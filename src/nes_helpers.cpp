@@ -197,7 +197,10 @@ namespace nes
             bin[i] = (d >> (7-i)) % 2 ? '1' : '0';
           }
           bin[8] = 0;
-          str += ToString("   ; %s", bin);
+          char buf[256];
+          sprintf(buf, "   ; %s", bin);
+//          str += ToString("   ; %s", bin);
+          str += buf;
         }
         output->push_back(make_pair(ip+org, str));
         ip = nextIp;
