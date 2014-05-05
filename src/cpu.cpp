@@ -26,7 +26,6 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   , m_inNmi(false)
   , m_loadButtonStates(false)
   , m_buttonIdx(0)
-  , m_runToCursor(~0)
   , m_dmaBytesLeft(0)
 {
   memset(&m_flags, 0, sizeof(m_flags));
@@ -920,13 +919,32 @@ void Cpu6502::ToggleBreakpointAtCursor()
 
 bool Cpu6502::IpAtBreakpoint()
 {
-  return m_breakpoints[m_regs.ip] > 0 || m_regs.ip == m_runToCursor;
+  // To make things like "run to cursor" and "step over" easier, we
+  // insert temporary breakpoints into the breakpoint list. These are
+  // removed once hit
+  u8 bp = m_breakpoints[m_regs.ip];
+  if (bp == 0)
+    return false;
+
+  // reset the breakpoint if temporary
+  m_breakpoints[m_regs.ip] &= ~TemporaryBreakpoint;
+  return true;
 }
 
 
 void Cpu6502::RunToCursor()
 {
-  m_runToCursor = m_cursorIp;
+  m_breakpoints[m_cursorIp] |= TemporaryBreakpoint;
+}
+
+void Cpu6502::StepOver()
+{
+  // check if the current instruction is a jump
+  OpCode op = PeekOp();
+  if (op == OpCode::JSR_ABS)
+    m_breakpoints[m_regs.ip + g_instrLength[(u32)OpCode::JSR_ABS]] |= TemporaryBreakpoint;
+  else
+    SingleStep();
 }
 
 bool Cpu6502::ByteVisible(u16 addr) const
@@ -1048,9 +1066,9 @@ void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
     }
     sprintf(bufPtr, "%s", d.second.c_str());
     text.setString(buf);
-    if (m_breakpoints[curIp])
+    if (m_breakpoints[curIp] == PermanentBreakpoint)
     {
-      text.setColor(sf::Color::Red);
+      text.setColor(curIp == m_regs.ip ? sf::Color(255, 165, 0, 255) : sf::Color::Red);
     }
     else
     {

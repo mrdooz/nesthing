@@ -42,6 +42,7 @@
 		2F23B5F8A06917C4D34DDE86 /* mmc1.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = mmc1.cpp; path = src/mmc1.cpp; sourceTree = SOURCE_ROOT; };
 		2F23B8BE4C3CC2BEE9617E66 /* nes.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = nes.cpp; path = src/nes.cpp; sourceTree = SOURCE_ROOT; };
 		2F23B9A421E0415E0B6320F3 /* ppu.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ppu.cpp; path = src/ppu.cpp; sourceTree = SOURCE_ROOT; };
+		2F23BB382126F41765D8D7E1 /* rolling_average.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = rolling_average.hpp; path = src/rolling_average.hpp; sourceTree = SOURCE_ROOT; };
 		2F23BCEED3BE6E5203FA7F55 /* mmc1.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = mmc1.hpp; path = src/mmc1.hpp; sourceTree = SOURCE_ROOT; };
 		2F23BE9754689D2FCFB4582D /* nes.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = nes.hpp; path = src/nes.hpp; sourceTree = SOURCE_ROOT; };
 		2F23BEFB4CAC5E8934D990B7 /* file_utils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = file_utils.cpp; path = src/file_utils.cpp; sourceTree = SOURCE_ROOT; };
@@ -116,6 +117,7 @@
 				2F23BE9754689D2FCFB4582D /* nes.hpp */,
 				2F23BEFB4CAC5E8934D990B7 /* file_utils.cpp */,
 				2F23B39687D5031EB3D23AE3 /* file_utils.hpp */,
+				2F23BB382126F41765D8D7E1 /* rolling_average.hpp */,
 			);
 			path = nesthing;
 			sourceTree = "<group>";

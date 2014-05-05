@@ -56,7 +56,6 @@ namespace nes
     void RenderDisassembly(sf::RenderWindow& window);
     bool ByteVisible(u16 addr) const;
 
-
     void Push16(u16 value);
     void Push8(u8 value);
     u16 Pop16();
@@ -67,6 +66,7 @@ namespace nes
     void ToggleBreakpointAtCursor();
     void RunToCursor();
     bool IpAtBreakpoint();
+    void StepOver();
 
     OpCode PeekOp();
 
@@ -102,12 +102,15 @@ namespace nes
 
     sf::Font font;
 
-    size_t m_runToCursor;
     size_t m_memoryOfs;
     size_t disasmOfs;
 
     InterruptVectors m_interruptVector;
 
+    enum {
+      PermanentBreakpoint = 1 << 0,
+      TemporaryBreakpoint = 1 << 1,
+    };
     vector<u8> m_breakpoints;
 
     // TODO: replace with a higher level NES thing that contains both the PPU and the CPU

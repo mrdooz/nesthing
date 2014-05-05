@@ -14,7 +14,7 @@ using namespace nes;
 //$27C0     $40     Attribute Table 1
 //$2800     $3C0    Name Table 2
 //$2BC0     $40     Attribute Table 2
-//$2C00     $3C0    Name Table 3
+//$2C00       $3C0    Name Table 3
 //$2FC0     $40     Attribute Table 3
 //$3000     $F00    Mirror of 2000h-2EFFh
 //$3F00     $10     BG Palette
@@ -56,6 +56,22 @@ PPU::PPU()
 void PPU::Tick()
 {
   // The PPU is ticked every 4th master clock cycle
+  // The screen is divided into 262 scanlines, each having 341 columns, as such:
+  //
+  //           x=0                 x=256      x=340
+  //       ___|____________________|__________|
+  //  y=-1    | pre-render scanline| prepare  |
+  //       ___|____________________| sprites _|
+  //  y=0     | visible area       | for the  |
+  //          | - this is rendered | next     |
+  //  y=239   |   on the screen.   | scanline |
+  //       ___|____________________|______
+  //  y=240   | idle
+  //       ___|_______________________________
+  //  y=241   | vertical blanking (idle)
+  //          | 20 scanlines long
+  //  y=260___|____________________|__________|
+  //
 
   // turn vblank off?
   if (m_scanlineTick == 1 && m_curScanline == 261)

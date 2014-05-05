@@ -29,6 +29,7 @@
 #include "cpu.hpp"
 #include "ppu.hpp"
 #include "mmc1.hpp"
+#include "rolling_average.hpp"
 
 using namespace std;
 using namespace nes;
@@ -53,53 +54,6 @@ namespace nes
   }
 }
 
-template <typename V, typename S = V>
-struct RollingAverage
-{
-  RollingAverage(size_t numSamples)
-    : _samples(numSamples)
-    , _samplesUsed(0)
-    , _nextSample(0)
-    , _sum(0)
-  {
-  }
-
-  void AddSample(V v)
-  {
-    if (_samplesUsed < _samples.size())
-    {
-      _samples[_samplesUsed++] = v;
-      _sum += v;
-    }
-    else
-    {
-      _sum -= _samples[_nextSample];
-      _sum += v;
-      _samples[_nextSample] = v;
-      _nextSample = (_nextSample + 1) % _samples.size();
-    }
-  }
-
-  V GetAverage() const
-  {
-    return _samplesUsed == 0 ? 0 : _sum / _samplesUsed;
-  }
-
-  V GetPeak() const
-  {
-    V m = std::numeric_limits<V>::min();
-    for (size_t i = 0; i < _samplesUsed; ++i)
-    {
-      m = max(m, _samples[i]);
-    }
-    return m;
-  }
-
-  vector<V> _samples;
-  size_t _samplesUsed;
-  size_t _nextSample;
-  S _sum;
-};
 
 RollingAverage<double> s_timeElapsed(100);
 
@@ -149,20 +103,16 @@ bool HandleKeyboardInput(const sf::Event& event)
     }
 
     case sf::Keyboard::O:
-    {
       runUntilReturn = true;
       break;
-    }
 
     case sf::Keyboard::Z:
       g_cpu.m_flags.z ^= g_cpu.m_flags.z;
       break;
 
     case sf::Keyboard::R:
-    {
       g_cpu.Reset();
       break;
-    }
 
     case sf::Keyboard::F5:
       executing = !executing;
@@ -172,6 +122,10 @@ bool HandleKeyboardInput(const sf::Event& event)
     case sf::Keyboard::F11:
     case sf::Keyboard::F7:
       g_cpu.SingleStep();
+      break;
+
+    case sf::Keyboard::F8:
+      g_cpu.StepOver();
       break;
 
     case sf::Keyboard::F9:
@@ -363,7 +317,6 @@ int main2(int argc, const char* argv[])
 
   g_cpu.Reset();
 
-
   // NTSC subcarrier frequency: 39375000 / 11
   // The master clock frequency is 6 times the subcarrier frequency
   // see http://wiki.nesdev.com/w/index.php/Overscan
@@ -455,11 +408,11 @@ int main2(int argc, const char* argv[])
   }
 
   return 0;
-
 }
 
-int main(int argc, const char * argv[])
+int DebuggerMain(int argc, const char* argv[])
 {
+  // each tick of the main loop does 3 ppu ticks, and 1 cpu tick
 #ifdef _WIN32
   if (!FindRoot())
   {
@@ -476,18 +429,15 @@ int main(int argc, const char * argv[])
     g_cpu.m_breakpoints[x] = 1;
   }
 
-  sf::RenderWindow tileWindow(sf::VideoMode(256, 256, 32), "Tilesets");
-
   // Create the main window
   sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
   window.setVerticalSyncEnabled(true);
-
 
   if (argc < 2)
   {
     return 1;
   }
-  
+
   Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
@@ -498,121 +448,37 @@ int main(int argc, const char * argv[])
   g_cpu.Reset();
   window.display();
 
-#ifdef _WIN32
-  //u64 lastTick = 0;
-#else
-  u64 lastTick = mach_absolute_time();
-#endif
-  u64 tickCount = 0;
-
-  Timer timer;
-  timer.SetInterval(Timer::Type::EventPoll, NANOSECOND/60);
-  timer.SetInterval(Timer::Type::Redraw, NANOSECOND/10);
-
-  u64 masterClock = 39375000 / 11 * 6;
-
-  timer.SetInterval(Timer::Type::CPU, NANOSECOND / (236250000 / (11 * 12)));
-  timer.SetInterval(Timer::Type::PPU, NANOSECOND / (236250000 / (11 * 4)));
-
-  timer.SetInterval(Timer::Type::OneSecond, NANOSECOND);
-
- #ifdef _WIN32
-  LARGE_INTEGER start, freq, lastTickCtr;
-  QueryPerformanceFrequency(&freq);
-  QueryPerformanceCounter(&start);
-  QueryPerformanceCounter(&lastTickCtr);
-
-  u64 lastTick = lastTickCtr.QuadPart / freq.QuadPart;
-  u64 tickIntervalCtr = freq.QuadPart / ticksPerSecond;
-#endif
-
-  u64 ticksPerSecond = 50;
-  double tickInterval = 1.0 / ticksPerSecond;
-  u64 masterClocksPerTick = masterClock / ticksPerSecond;
-  u64 masterClocksLastTick = 0;
+  // cpu cylces until the currently running instruction is done
+  u32 cpuDelay = 0;
 
   bool done = false;
-  bool swapped = false;
-  u64 prevNs = NowNanoseconds();
   while (!done)
   {
     sf::Event event;
+
     if (IsRunning())
     {
-      tickCount++;
+      g_ppu.Tick();
+      g_ppu.Tick();
+      g_ppu.Tick();
 
-#ifdef _WIN32
-      LARGE_INTEGER nowCtr;
-      QueryPerformanceCounter(&nowCtr);
-      double diff = (double)(nowCtr.QuadPart - lastTickCtr.QuadPart) / tickIntervalCtr;
-#endif
-      u64 nowNs = NowNanoseconds();
-      double diff = (nowNs - prevNs) / 1e9;
-      prevNs = nowNs;
-      s_timeElapsed.AddSample(diff);
+      // Is there any currently executing CPU instruction?
+      if (cpuDelay > 0)
+        --cpuDelay;
+
+      if (cpuDelay == 0)
+      {
+        if (g_cpu.IpAtBreakpoint())
+        {
+          executing = false;
+        }
+        else
+        {
+          g_cpu.Tick();
+        }
+      }
 
       size_t elapsedTimers[(int)Timer::Type::NumTimers];
-      timer.Elapsed(elapsedTimers);
-
-      if (elapsedTimers[(size_t)Timer::Type::OneSecond])
-      {
-        printf("avg: %f (peak: %f)\n", s_timeElapsed.GetAverage(), s_timeElapsed.GetPeak());
-      }
-
-      if (diff > tickInterval)
-//      if ((u64)(nowCtr.QuadPart - lastTickCtr.QuadPart) > tickIntervalCtr)
-      {
-        // number of ticks until next cpu instruction can be executed
-        size_t tickDelay = 0;
-        // Do master ticks. 3 ppu ticks per cpu tick
-        for (size_t i = 0; i < masterClocksPerTick/4; ++i)
-        {
-          for (size_t j = 0; j < 3; ++j)
-          {
-            g_ppu.Tick();
-            if (g_ppu.TriggerNmi())
-            {
-              g_cpu.ExecuteNmi();
-            }
-          }
-
-          // check if the CPU has finished its previous instruction
-          if (tickDelay == 0)
-          {
-            tickDelay = g_cpu.SingleStep();
-
-            // update these guys to break
-            if (runUntilReturn)
-            {
-              OpCode op = g_cpu.PeekOp();
-              if (op == OpCode::RTS || op == OpCode::RTI)
-              {
-                runUntilReturn = false;
-              }
-            }
-            if (runUntilBranch)
-            {
-              OpCode op = g_cpu.PeekOp();
-              if (g_branchingOpCodes[(u8)op])
-              {
-                runUntilBranch = false;
-              }
-            }
-
-            if (g_cpu.IpAtBreakpoint())
-            {
-              runUntilBranch = false;
-              runUntilReturn = false;
-              executing = false;
-            }
-          }
-          else
-          {
-            tickDelay--;
-          }
-        }
-        //lastTickCtr = nowCtr;
-      }
 
       if (elapsedTimers[(int)Timer::Type::Redraw])
       {
@@ -640,10 +506,140 @@ int main(int argc, const char * argv[])
       if (event.type == sf::Event::KeyReleased)
       {
         done = HandleKeyboardInput(event);
-        swapped = true;
       }
     }
   }
 
   return 0;
+}
+
+int EmulatorMain(int argc, const char* argv[])
+{
+
+  // run the emulator in real time
+
+  // Create the main window
+  sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
+  window.setVerticalSyncEnabled(true);
+
+  if (argc < 2)
+  {
+    return 1;
+  }
+
+  Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
+  if (status != Status::OK)
+  {
+    printf("error loading rom: %s\n", argv[1]);
+    return (int)status;
+  }
+
+  g_cpu.Reset();
+  window.display();
+
+  // NTSC subcarrier frequency: 39375000 / 11
+  // The master clock frequency is 6 times the subcarrier frequency
+  // see http://wiki.nesdev.com/w/index.php/Overscan
+  u64 masterClock = 39375000 / 11 * 6;
+
+  // ns between master, ppu and cpu ticks
+  double mcPeriod_ns = 1e9 / masterClock;
+  double ppuPeriod_ns = 1e9 / (masterClock / 4);
+  double cpuPeriod_ns = 1e9 / (masterClock / 12);
+
+  // keep track of accumulated time to know when to tick ppu/cpu
+  double ppuAcc_ns = 0;
+  double cpuAcc_ns = 0;
+  double mcAcc_ns = 0;
+
+  double elapsedTime_ns = 0;
+
+  u64 lastTick_ns = NowNanoseconds();
+  u64 totalTicks = 0;
+  u64 mcTicks = 0;
+  u64 cpuTicks = 0;
+  u64 ppuTicks = 0;
+
+  // cpu cylces until the currently running instruction is done
+  u32 cpuDelay = 0;
+  RollingAverage<double> avgTick(1000);
+
+  bool done = false;
+  bool swapped = false;
+  while (!done)
+  {
+    sf::Event event;
+
+    u64 now_ns = NowNanoseconds();
+    double delta_ns = now_ns - lastTick_ns;
+    avgTick.AddSample(delta_ns);
+    lastTick_ns = now_ns;
+    elapsedTime_ns += delta_ns;
+
+    mcAcc_ns += delta_ns;
+    ppuAcc_ns += delta_ns;
+    cpuAcc_ns += delta_ns;
+
+    while (ppuAcc_ns > ppuPeriod_ns)
+    {
+      g_ppu.Tick();
+      ppuAcc_ns -= ppuPeriod_ns;
+      ++ppuTicks;
+
+      if (g_ppu.TriggerNmi())
+      {
+        g_cpu.ExecuteNmi();
+      }
+    }
+
+    while (cpuAcc_ns > cpuPeriod_ns)
+    {
+      // Is there any currently executing CPU instruction?
+      if (cpuDelay > 0)
+        --cpuDelay;
+
+      if (cpuDelay == 0)
+        g_cpu.Tick();
+
+      cpuAcc_ns -= cpuPeriod_ns;
+      ++cpuTicks;
+    }
+
+    while (mcAcc_ns > mcPeriod_ns)
+    {
+      mcAcc_ns -= mcPeriod_ns;
+      ++mcTicks;
+    }
+
+    ++totalTicks;
+
+    // add the time delta to the timers
+    s_timeElapsed.AddSample(delta_ns);
+
+    size_t elapsedTimers[(int)Timer::Type::NumTimers];
+
+    if (elapsedTimers[(int)Timer::Type::Redraw])
+    {
+      window.clear();
+      g_cpu.RenderState(window);
+      window.display();
+    }
+
+    if (elapsedTimers[(int)Timer::Type::EventPoll])
+    {
+      window.pollEvent(event);
+      if (event.type == sf::Event::KeyReleased)
+      {
+        done = HandleKeyboardInput(event);
+      }
+    }
+  }
+
+  return 0;
+}
+
+int main(int argc, const char * argv[])
+{
+  int res = DebuggerMain(argc, argv);
+  return res;
 }
