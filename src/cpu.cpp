@@ -96,19 +96,7 @@ Status Cpu6502::Reset()
   m_interruptVector = *(InterruptVectors*)&m_memory[0xfffa];
   m_regs.ip = m_interruptVector.reset;
   m_cursorIp = m_regs.ip;
-
   m_currentBank = 0;
-
-  for (size_t i = 0; i < m_prgRom.size(); ++i)
-  {
-    auto& rom = m_prgRom[i];
-    // If the current block contains the IP, start disassembling from the IP instead of from
-    // the start to skip trash bytes (INES header)
-    size_t ofs = m_regs.ip >= rom.base && m_regs.ip < rom.base + rom.data.size() ? m_regs.ip - rom.base : 0;
-    if (ofs > 0)
-      m_currentBank = i;
-    Disassemble(&rom.data[ofs], rom.data.size() - ofs, rom.base + ofs, &rom.disasm);
-  }
 
   return Status::OK;
 }
@@ -884,19 +872,19 @@ void Cpu6502::UpdateCursorPos(int delta)
     {
 
       typedef pair<u32, string> Val;
-      auto it = find_if(rom.disasm.begin(), rom.disasm.end(), [=](const Val& a)
+      auto it = find_if(_disasm.begin(), _disasm.end(), [=](const Val& a)
       {
         return a.first == m_cursorIp;
       });
 
-      if (it == rom.disasm.end())
+      if (it == _disasm.end())
       {
         return;
       }
 
-      int idx = it - rom.disasm.begin();
-      idx = max(0, min((int)rom.disasm.size()-1, idx + delta));
-      m_cursorIp = rom.disasm[idx].first;
+      int idx = it - _disasm.begin();
+      idx = max(0, min((int)_disasm.size()-1, idx + delta));
+      m_cursorIp = _disasm[idx].first;
       return;
     }
   }
@@ -1025,13 +1013,11 @@ void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
 
   // Look for the current IP in the disassemble block (ideally it should always be there..)
   typedef pair<u32, string> Val;
-  auto it = find_if(rom.disasm.begin(), rom.disasm.end(),
+  auto it = find_if(_disasm.begin(), _disasm.end(),
       [=](const Val& a) { return a.first == (m_freeMovement ? m_cursorIp : m_regs.ip); });
 
-  if (it == rom.disasm.end())
-  {
+  if (it == _disasm.end())
     return;
-  }
 
   sf::RectangleShape currentRect;
   int rowHeight = 15;
@@ -1042,30 +1028,17 @@ void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
   currentRect.setOutlineThickness(2);
   currentRect.setSize(sf::Vector2f((float)rowWidth, (float)rowHeight));
 
-  int startIdx = max(0, (int)(it - rom.disasm.begin()) - 10);
-  int endIdx = min((int)rom.disasm.size(), startIdx + 30);
+  int startIdx = max(0, (int)(it - _disasm.begin()) - 10);
+  int endIdx = min((int)_disasm.size(), startIdx + 30);
   int cnt = 0;
   for (int i = startIdx; i < endIdx; ++i, ++cnt)
   {
     text.setPosition(pos);
-    auto& d = rom.disasm[i];
+    const pair<u32, string>& d = _disasm[i];
+
     u32 curIp = d.first;
-    u32 idx = curIp - rom.base;
-    // Create the string "ADDR BYTES OPCODE"
-    char buf[256];
-    char* bufPtr = buf + sprintf(buf, "%.4x    ", curIp);
-    // "max" to handle the case of illegal instructions
-    size_t numBytes = max(1, g_instrLength[rom.data[idx]]);
-    for (size_t i = 0; i < numBytes; ++i)
-    {
-      bufPtr += sprintf(bufPtr, "%.2x", rom.data[idx+i]);
-    }
-    for (size_t i = 0; i < 3 - numBytes + 2; ++i)
-    {
-      bufPtr += sprintf(bufPtr, "  ");
-    }
-    sprintf(bufPtr, "%s", d.second.c_str());
-    text.setString(buf);
+
+    text.setString(d.second.c_str());
     if (m_breakpoints[curIp] == PermanentBreakpoint)
     {
       text.setColor(curIp == m_regs.ip ? sf::Color(255, 165, 0, 255) : sf::Color::Red);

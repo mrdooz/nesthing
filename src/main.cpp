@@ -44,7 +44,7 @@ namespace nes
   MMC1 g_mmc1;
   Cpu6502 g_cpu(&g_ppu, &g_mmc1);
 
-  bool executing = false;
+  bool executing = true;
   bool runUntilReturn = false;
   bool runUntilBranch = false;
 
@@ -69,18 +69,6 @@ bool HandleKeyboardInput(const sf::Event& event)
     case sf::Keyboard::B:
     {
       runUntilBranch = true;
-      break;
-    }
-
-    case sf::Keyboard::D:
-    {
-      if (!g_cpu.m_prgRom.empty())
-      {
-        for (auto& d : g_cpu.m_prgRom[0].disasm)
-        {
-          printf("%.4x  %s\n", d.first, d.second.c_str());
-        }
-      }
       break;
     }
 
@@ -308,7 +296,7 @@ int main2(int argc, const char* argv[])
   Timer timer;
   timer.SetInterval(Timer::Type::OneSecond, NANOSECOND);
 
-  Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
+  Status status = LoadINes(argv[1], argv[2], &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
     printf("error loading rom: %s\n", argv[1]);
@@ -409,6 +397,8 @@ int main2(int argc, const char* argv[])
 
   return 0;
 }
+u32 g_nesPixels[256*240];
+
 
 int DebuggerMain(int argc, const char* argv[])
 {
@@ -433,12 +423,19 @@ int DebuggerMain(int argc, const char* argv[])
   sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
   window.setVerticalSyncEnabled(true);
 
-  if (argc < 2)
+  if (argc < 3)
   {
     return 1;
   }
 
-  Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
+  sf::RenderWindow mainWindow(sf::VideoMode(512, 480, 32), "...");
+  mainWindow.display();
+  sf::Texture mainTexture;
+  sf::Sprite mainSprite;
+  mainTexture.create(256, 240);
+  mainSprite.setTexture(mainTexture, true);
+
+  Status status = LoadINes(argv[1], argv[2], &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
     printf("error loading rom: %s\n", argv[1]);
@@ -484,6 +481,11 @@ int DebuggerMain(int argc, const char* argv[])
       {
         window.clear();
         g_cpu.RenderState(window);
+
+        mainTexture.update((u8*)g_nesPixels);
+        mainWindow.draw(mainSprite);
+        mainWindow.display();
+
         window.display();
       }
 
@@ -513,29 +515,30 @@ int DebuggerMain(int argc, const char* argv[])
   return 0;
 }
 
+
 int EmulatorMain(int argc, const char* argv[])
 {
-
   // run the emulator in real time
 
-  // Create the main window
-  sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
-  window.setVerticalSyncEnabled(true);
-
-  if (argc < 2)
+  if (argc < 3)
   {
     return 1;
   }
 
-  Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
+  Status status = LoadINes(argv[1], argv[2], &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
     printf("error loading rom: %s\n", argv[1]);
     return (int)status;
   }
 
+  sf::RenderWindow mainWindow(sf::VideoMode(512, 480, 32), "...");
+  sf::Texture mainTexture;
+  mainTexture.create(256, 240);
+  sf::Sprite mainSprite(mainTexture);
+
   g_cpu.Reset();
-  window.display();
+  mainWindow.display();
 
   // NTSC subcarrier frequency: 39375000 / 11
   // The master clock frequency is 6 times the subcarrier frequency
@@ -565,7 +568,6 @@ int EmulatorMain(int argc, const char* argv[])
   RollingAverage<double> avgTick(1000);
 
   bool done = false;
-  bool swapped = false;
   while (!done)
   {
     sf::Event event;
@@ -588,6 +590,13 @@ int EmulatorMain(int argc, const char* argv[])
 
       if (g_ppu.TriggerNmi())
       {
+        mainTexture.update((u8*)g_nesPixels, 256, 240, 0, 0);
+        mainSprite.setTexture(mainTexture, true);
+        mainSprite.setScale(2, 2);
+        mainWindow.clear();
+        mainWindow.draw(mainSprite);
+        mainWindow.display();
+
         g_cpu.ExecuteNmi();
       }
     }
@@ -618,16 +627,9 @@ int EmulatorMain(int argc, const char* argv[])
 
     size_t elapsedTimers[(int)Timer::Type::NumTimers];
 
-    if (elapsedTimers[(int)Timer::Type::Redraw])
-    {
-      window.clear();
-      g_cpu.RenderState(window);
-      window.display();
-    }
-
     if (elapsedTimers[(int)Timer::Type::EventPoll])
     {
-      window.pollEvent(event);
+      mainWindow.pollEvent(event);
       if (event.type == sf::Event::KeyReleased)
       {
         done = HandleKeyboardInput(event);
@@ -640,6 +642,7 @@ int EmulatorMain(int argc, const char* argv[])
 
 int main(int argc, const char * argv[])
 {
-  int res = DebuggerMain(argc, argv);
+  //int res = DebuggerMain(argc, argv);
+  int res = EmulatorMain(argc, argv);
   return res;
 }

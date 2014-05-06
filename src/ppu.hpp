@@ -115,20 +115,25 @@ namespace nes
       };
       Sprite sprites[256];
     };
-    PatternTable m_patternTable[2];
+    PatternTable _patternTable[2];
 
-    u16 m_backgroundTableAddr;
+    u16 _backgroundTableAddr;
     u16 m_spriteTableAddr;
     u16 m_nameTableAddr;
     u8 m_backgroundTableIdx;
     u8 m_spriteTableIdx;
 
-    u16 m_curScanline;
+    s16 m_curScanline;
     u16 m_scanlineTick;
     u16 m_curCycle;
     u8 m_memoryAccessCycle;
     u8 m_OamIdx;
     bool m_triggerNmi;
+
+    u8 _curNameTable;
+    u8 _curAttributeTable;
+    u8 _curPatternTable0;
+    u8 _curPatternTable1;
   };
 
 }

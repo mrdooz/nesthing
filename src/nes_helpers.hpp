@@ -101,14 +101,11 @@ namespace nes
 
   struct Cpu6502;
   struct PPU;
-  Status LoadINes(const char* filename, Cpu6502* cpu, PPU* ppu);
+  Status LoadINes(const char* filename, const char* disasmFile, Cpu6502* cpu, PPU* ppu);
 
   void DumpHeader1(const INesHeader1* header);
   void DumpHeader2(const INesHeader2* header);
   void DumpHeader(const INesHeaderCommon* header);
-  void Disassemble(const u8* data, size_t len, u32 org, vector<pair<u32, string>>* output);
-
-  void FindJumpDestinations(const u8* base, std::vector<u16>& branchDestinations);
 
   extern int g_instrLength[];
   extern u8 g_validOpCodes[];

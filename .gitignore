@@ -8,3 +8,6 @@ dcc6502/*
 *.sdf
 *.vsp
 *.psess
+CMakeCache.txt
+CMakeFiles/*
+nesthing.x*

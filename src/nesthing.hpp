@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <SFML/Graphics.hpp>
 #include <SFML/System.hpp>
+#include <SFML/Graphics/Image.hpp>
 
 namespace nes
 {
@@ -43,6 +44,7 @@ namespace nes
   {
     OK,
     ROM_NOT_FOUND,
+    DISASM_NOT_FOUND,
     INVALID_MAPPER_VERSION,
     FONT_NOT_FOUND,
 

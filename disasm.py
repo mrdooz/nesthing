@@ -42,14 +42,14 @@ def init_addresses():
 # instructions have the form aaabbbcc, where aaa and cc determine
 # opcode, and bbb the addressing mode
 c01_ops = {
-	0b000 : 'ora',
-	0b001 : 'and',
-	0b010 : 'eor',
-	0b011 : 'adc',
-	0b100 : 'sta',
-	0b101 : 'lda',
-	0b110 : 'cmp',
-	0b111 : 'sbc'
+	0b000 : 'ORA',
+	0b001 : 'AND',
+	0b010 : 'EOR',
+	0b011 : 'ADC',
+	0b100 : 'STA',
+	0b101 : 'LDA',
+	0b110 : 'CMP',
+	0b111 : 'SBC'
 }
 
 c01_addr = {
@@ -64,14 +64,14 @@ c01_addr = {
 }
 
 c10_ops = {
-	0b000 : 'asl',
-	0b001 : 'rol',
-	0b010 : 'lsr',
-	0b011 : 'ror',
-	0b100 : 'stx',
-	0b101 : 'ldx',
-	0b110 : 'dec',
-	0b111 : 'inc'
+	0b000 : 'ASL',
+	0b001 : 'ROL',
+	0b010 : 'LSR',
+	0b011 : 'ROR',
+	0b100 : 'STX',
+	0b101 : 'LDX',
+	0b110 : 'DEC',
+	0b111 : 'INC'
 }
 
 c10_addr = {
@@ -84,13 +84,13 @@ c10_addr = {
 }
 
 c00_ops = {
-	0b001 : 'bit',
-	0b010 : 'jmp',
-	0b011 : 'jmp (abs)',
-	0b100 : 'sty',
-	0b101 : 'ldy',
-	0b110 : 'cpy',
-	0b111 : 'cpx'
+	0b001 : 'BIT',
+	0b010 : 'JMP',
+	0b011 : 'JMP (ABS)',
+	0b100 : 'STY',
+	0b101 : 'LDY',
+	0b110 : 'CPY',
+	0b111 : 'CPX'
 }
 
 c00_addr = {
@@ -106,43 +106,43 @@ ctable = { 0b00 : (c00_ops, c00_addr), 0b01 : (c01_ops, c01_addr),
 
 # conditional flags have the form xxy10000
 cnd_ops = {
-	0x10 : 'bpl',
-	0x30 : 'bmi',
-	0x50 : 'bvc',
-	0x70 : 'bvs',
-	0x90 : 'bcc',
-	0xb0 : 'bcs',
-	0xd0 : 'bne',
-	0xf0 : 'beq'
+	0x10 : 'BPL',
+	0x30 : 'BMI',
+	0x50 : 'BVC',
+	0x70 : 'BVS',
+	0x90 : 'BCC',
+	0xb0 : 'BCS',
+	0xd0 : 'BNE',
+	0xf0 : 'BEQ'
 }
 
 # interrupt and subroutine
 sub_ops = {
-	0x00 : 'brk',
-	0x20 : 'jsr',
-	0x40 : 'rti',
-	0x60 : 'rts'
+	0x00 : 'BRK',
+	0x20 : 'JSR',
+	0x40 : 'RTI',
+	0x60 : 'RTS'
 }
 
 # remaining single byte instructions
 single_ops = {
-	0x08 : 'php',
-	0x28 : 'plp',
-	0x48 : 'pha',
-	0x68 : 'pla',
-	0x88 : 'dey',
-	0xa8 : 'tay',
-	0xc8 : 'iny',
-	0xe8 : 'inx',
+	0x08 : 'PHP',
+	0x28 : 'PLP',
+	0x48 : 'PHA',
+	0x68 : 'PLA',
+	0x88 : 'DEY',
+	0xa8 : 'TAY',
+	0xc8 : 'INY',
+	0xe8 : 'INX',
 
-	0x18 : 'clc',
-	0x38 : 'sec',
-	0x58 : 'cli',
-	0x78 : 'sei',
-	0x98 : 'tya',
-	0xb8 : 'clv',
-	0xd8 : 'cld',
-	0xf8 : 'sed'
+	0x18 : 'CLC',
+	0x38 : 'SEC',
+	0x58 : 'CLI',
+	0x78 : 'SEI',
+	0x98 : 'TYA',
+	0xb8 : 'CLV',
+	0xd8 : 'CLD',
+	0xf8 : 'SED'
 }
 
 if len(sys.argv) < 2:

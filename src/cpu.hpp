@@ -20,7 +20,6 @@ namespace nes
   {
     u16 base;
     array<u8, 16*1024> data;
-    vector<pair<u32, string> > disasm;
   };
 
   struct Cpu6502
@@ -129,6 +128,8 @@ namespace nes
 
     u16 m_dmaReadAddr;
     u16 m_dmaBytesLeft;
+
+    vector<pair<u32, string>> _disasm;
   };
 }
 

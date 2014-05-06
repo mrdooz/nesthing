@@ -4,6 +4,13 @@
 using namespace nes;
 #define DUMP_TO_STDOUT 0
 
+extern u32 g_nesPixels[256*240];
+
+u32 ColorToU32(const sf::Color& col)
+{
+  return (col.a << 24) + (col.r << 16) + (col.g << 8) + (col.b);
+}
+
 // PPU memory map
 //Address   Size    Description
 //$0000     $1000   Pattern Table 0
@@ -36,16 +43,17 @@ PPU::PPU()
   , m_hscroll(0)
   , m_vscroll(0)
   , m_memory(MEMORY_SIZE)
-  , m_backgroundTableAddr(0)
+  , _backgroundTableAddr(0)
   , m_spriteTableAddr(0)
   , m_nameTableAddr(0x2000)
   , m_backgroundTableIdx(0)
   , m_spriteTableIdx(0)
-  , m_curScanline(0)
+  , m_curScanline(-1)
   , m_scanlineTick(0)
   , m_curCycle(0)
   , m_memoryAccessCycle(0)
   , m_OamIdx(0)
+  , _curNameTable(0)
 {
   m_nameTable[0] = 0x2000;
   m_nameTable[1] = 0x2400;
@@ -73,26 +81,84 @@ void PPU::Tick()
   //  y=260___|____________________|__________|
   //
 
-  // turn vblank off?
-  if (m_scanlineTick == 1 && m_curScanline == 261)
+  // process current scan line
+  if (m_curScanline < 240)
   {
-    m_status.vblank = 0;
-  }
+    // tick 0 is idle, so skip if
+    if (m_scanlineTick > 0)
+    {
+      if (m_curScanline == -1)
+      {
+        // pre render
+        if (m_scanlineTick == 1)
+        {
+          // turn vblank off
+          m_status.vblank = 0;
+        }
+      }
 
-  // turn vblank on?
-  if (m_scanlineTick == 1 && m_curScanline == 241)
+      // the 256 pixels consist of 32 8 pixel blocks
+      // each memory fetch takes 2 cycles, and the following cycle is
+      // performed for each block
+      // 1) fetch name table byte
+      // 2) fetch attribute table byte
+      // 3) 2 x fetch pattern table byte
+
+      if (m_scanlineTick <= 256)
+      {
+        u16 x = m_scanlineTick / 8;
+        u16 y = m_curScanline / 8;
+        u8* nameTable = &m_memory[0x400];
+        switch (m_scanlineTick & 7)
+        {
+          // name table byte
+          case 0: break;
+          case 1: _curNameTable = nameTable[y*32+x];
+          // attribute table
+          case 2: break;
+          case 3:
+          // pattern table
+          case 4: break;
+          case 5:
+          // pattern table
+          case 6: break;
+          case 7: break;
+        }
+
+        if (m_curScanline >= 0)
+        {
+          // draw the current pixel using current name table
+          u8 t = nameTable[_curNameTable*16];
+          u8 v = 255 * ((t >> ((m_scanlineTick & 7) & 7)) & 1);
+          g_nesPixels[m_curScanline*256+m_scanlineTick] = ColorToU32(sf::Color(v, v, v, 0xff));
+        }
+      }
+
+    }
+
+  }
+  else if (m_curScanline == 240)
   {
-    m_triggerNmi = m_control1.nmiOnVBlank > 0 ;
-    m_status.vblank = 1;
+    // idle..
+  }
+  else
+  {
+    // in vblank
+    if (m_scanlineTick == 1 && m_curScanline == 241)
+    {
+      // turn vblank on
+      m_triggerNmi = m_control1.nmiOnVBlank > 0;
+      m_status.vblank = 1;
+    }
   }
 
   // each scan line is 341 ticks, except for line 0 every odd frame
   u16 ticksOnScanline = m_curScanline == 0 && !m_evenFrame ? 340 : 341;
   if (m_scanlineTick == ticksOnScanline)
   {
-    if (m_curScanline++ == 262)
+    if (m_curScanline++ == 261)
     {
-      m_curScanline = 0;
+      m_curScanline = -1;
     }
 
     m_scanlineTick = 0;
@@ -115,7 +181,7 @@ void PPU::DrawScanline(int scanline, sf::Image& image)
     u8 sprite = nameTable[tileY*32+i];
     for (int j = 0; j < 8; ++j)
     {
-      u8 pixel = m_patternTable[m_backgroundTableIdx].sprites[sprite].data[(scanline&7)*8+j];
+      u8 pixel = _patternTable[m_backgroundTableIdx].sprites[sprite].data[(scanline&7)*8+j];
       image.setPixel(i*8+j, scanline, sf::Color(g_NesPalette[pixel*3+0], g_NesPalette[pixel*3+1], g_NesPalette[pixel*3+2]));
     }
   }
@@ -126,7 +192,7 @@ void PPU::DrawScanline(int scanline, sf::Image& image)
 void PPU::SetControl1(u8 value)
 {
   m_control1.reg = value;
-  m_backgroundTableAddr = m_control1.backgroundPatterTableAddr ? 0x1000 : 0;
+  _backgroundTableAddr = m_control1.backgroundPatterTableAddr ? 0x1000 : 0;
   m_backgroundTableIdx  = m_control1.backgroundPatterTableAddr ? 1 : 0;
 
   m_spriteTableAddr = m_control1.spritePatternTableAddr ? 0x1000 : 0;
@@ -296,10 +362,18 @@ void PPU::DumpVRom()
 {
   Image image;
   image.create(16*8, 16*8);
-  CreatePatternTable(&m_memory[0], 256, &m_patternTable[0], &image);
+  CreatePatternTable(&m_memory[0], 256, &_patternTable[0], &image);
+  #if _WIN32
   image.saveToFile("c:/temp/pattern_table0.png");
-  CreatePatternTable(&m_memory[256*16], 256, &m_patternTable[1], &image);
+  #else
+  image.saveToFile("/Users/dooz/tmp/pattern_table0.png");
+  #endif
+  CreatePatternTable(&m_memory[256*16], 256, &_patternTable[1], &image);
+#if _WIN32
   image.saveToFile("c:/temp/pattern_table1.png");
+  #else
+  image.saveToFile("/Users/dooz/tmp/pattern_table1.png");
+#endif
 }
 
 bool PPU::TriggerNmi()
