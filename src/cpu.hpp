@@ -83,41 +83,41 @@ namespace nes
         u8 s : 1;   // sign
       };
       u8 reg;
-    } m_flags;
+    } _flags;
 
-    vector<u8> m_memory;
-    vector<u8> m_memoryAge;
+    vector<u8> _memory;
+    vector<u8> _memoryAge;
 
-    vector<PrgRom> m_prgRom;
+    vector<PrgRom> _prgRom;
 
-    size_t m_currentBank;
+    size_t _currentBank;
 
     struct  
     {
       u16 ip;
       u8 s;
       u8 a, x, y;
-    } m_regs;
+    } _regs;
 
-    sf::Font font;
+    sf::Font _font;
 
-    size_t m_memoryOfs;
-    size_t disasmOfs;
+    size_t _memoryOfs;
+    size_t _disasmOfs;
 
-    InterruptVectors m_interruptVector;
+    InterruptVectors _interruptVector;
 
     enum {
       PermanentBreakpoint = 1 << 0,
       TemporaryBreakpoint = 1 << 1,
     };
-    vector<u8> m_breakpoints;
+    vector<u8> _breakpoints;
 
     // TODO: replace with a higher level NES thing that contains both the PPU and the CPU
-    PPU* m_ppu;
-    MMC1* m_mmc1;
+    PPU* _ppu;
+    //MMC1* m_mmc1;
 
-    bool m_freeMovement;
-    u16 m_cursorIp;
+    bool _freeMovement;
+    u16 _cursorIp;
     u16 m_storedIp;
     u8 m_storedFlags;
     bool m_inNmi;

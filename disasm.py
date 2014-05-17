@@ -162,8 +162,6 @@ pal = d('B', f, 9)
 ofs = 16 + (flags_1 & 0b100) * 512
 
 # if only a single rom bank exists, load it into both $8000 and $c000
-ip = 0x8000
-ip_end = 0x8000 + num_ram_banks * 0x4000
 if num_rom_banks == 1:
 	rom_page_0 = f[ofs:ofs+0x4000]
 	rom_page_1 = f[ofs:ofs+0x4000]
@@ -183,7 +181,7 @@ ip_end = 0x8000 + len(rom_page_0) - 6
 # list of (addr, str) tuples
 disasm = []
 subroutines = set()
-ofs = 0
+ofs = ip - 0x8000
 
 init_addresses()
 

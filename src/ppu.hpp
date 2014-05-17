@@ -6,16 +6,12 @@ namespace nes
 {
   struct PPU
   {
-    struct PatternTable;
-
     PPU();
     void Tick();
     void WriteMemory(u16 addr, u8 value);
     u8 ReadMemory(u16 addr);
     void DumpVRom();
-    void CreatePatternTable(const u8* data, size_t numTiles, PatternTable* patternTable, Image* image);
-
-    void DrawScanline(int scanline, sf::Image& image);
+    void DumpNameTable(u16 nameTableOfs, Image *image);
 
     void SetControl1(u8 value);
     void SetControl2(u8 value);
@@ -35,7 +31,7 @@ namespace nes
         u8 nmiOnVBlank : 1;
       };
       u8 reg;
-    } m_control1;
+    } _control1;
 
     union
     {
@@ -66,21 +62,13 @@ namespace nes
         u8 vblank : 1;
       };
       u8 reg;
-    } m_status;
-
-    bool m_hiLoLatch; // false = low byte
-    u16 m_writeAddr;
-    u16 m_readAddr;
-    bool m_firstRead;
-    u8 m_oamAddr;
-
-    u8 m_spriteRamOfs;
+    } _status;
 
     struct OamEntry
     {
       u8 vpos;
       u8 tile;
-      u8 palette: 2;
+      u8 palette : 2;
       u8 reserverd : 3;
       u8 prio : 1;
       u8 hflip : 1;
@@ -90,50 +78,36 @@ namespace nes
 
     union
     {
-      OamEntry m_oam[64];
-      u8 m_spriteRam[256];
+      OamEntry _oam[64];
+      u8 _spriteRam[256];
     };
 
     union
     {
-      OamEntry m_secondaryOam[8];
-      u8 m_secondaryOamRaw[32];
+      OamEntry _secondaryOam[8];
+      u8 _secondaryOamRaw[32];
     };
 
-    bool m_evenFrame;
-    u8 m_hscroll;
-    u8 m_vscroll;
-    vector<u8> m_memory;
-    // at $2000, $2400, $2800, $2c00
-    u16 m_nameTable[4];
+    bool _hiLoLatch; // false = low byte
+    u16 _writeAddr;
+    u16 _readAddr;
 
-    struct PatternTable
-    {
-      struct Sprite
-      {
-        u8 data[8*8];
-      };
-      Sprite sprites[256];
-    };
-    PatternTable _patternTable[2];
+    u8 _spriteRamOfs;
+
+    bool _evenFrame;
+    u8 _hscroll;
+    u8 _vscroll;
+    vector<u8> _memory;
 
     u16 _backgroundTableAddr;
-    u16 m_spriteTableAddr;
-    u16 m_nameTableAddr;
-    u8 m_backgroundTableIdx;
-    u8 m_spriteTableIdx;
+    u16 _spriteTableAddr;
+    u16 _nameTableAddr;
+    u8 _numSprites;
 
-    s16 m_curScanline;
-    u16 m_scanlineTick;
-    u16 m_curCycle;
-    u8 m_memoryAccessCycle;
-    u8 m_OamIdx;
-    bool m_triggerNmi;
-
-    u8 _curNameTable;
-    u8 _curAttributeTable;
-    u8 _curPatternTable0;
-    u8 _curPatternTable1;
+    s16 _curScanline;
+    u16 _scanlineTick;
+    u8 _oamIdx;
+    bool _triggerNmi;
   };
 
 }

@@ -98,7 +98,7 @@ namespace nes
         case 1: rom.base = 0xc000; break;
         default: rom.base = 0; break;
       }
-      cpu->m_prgRom.emplace_back(rom);
+      cpu->_prgRom.emplace_back(rom);
     }
 
     // copy VROM banks
@@ -106,44 +106,45 @@ namespace nes
     size_t numVBanks = header->numVRomBanks;
     for (size_t i = 0; i < numVBanks; ++i)
     {
-      memcpy(&ppu->m_memory[i*vromBankSize], &vram[0], vromBankSize);
+      memcpy(&ppu->_memory[i*vromBankSize], &vram[0], vromBankSize);
     }
-
-    ppu->DumpVRom();
 
 #ifdef _WIN32
     const char* fontName = "/projects/nesthing/ProggyClean.ttf";
 #else
     const char* fontName = "/users/dooz/projects/nesthing/ProggyClean.ttf";
 #endif
-    if (!cpu->font.loadFromFile(fontName))
+    if (!cpu->_font.loadFromFile(fontName))
     {
       return Status::FONT_NOT_FOUND;
     }
 
-    FILE* fDisasm = fopen(disasm, "rt");
-    if (!fDisasm)
-      return Status::DISASM_NOT_FOUND;
-
-    while (true)
+    if (disasm)
     {
-      char buf[256];
-      fgets(buf, sizeof(buf), fDisasm);
-      if (feof(fDisasm))
-        break;
+      FILE* fDisasm = fopen(disasm, "rt");
+      if (!fDisasm)
+        return Status::DISASM_NOT_FOUND;
 
-      u32 addr;
-      if (!sscanf(buf, "%x", &addr))
-        continue;
+      while (true)
+      {
+        char buf[256];
+        fgets(buf, sizeof(buf), fDisasm);
+        if (feof(fDisasm))
+          break;
 
-      // remove trailing \n
-      if (char* newline = strchr(buf, '\n'))
-        *newline = 0;
+        u32 addr;
+        if (!sscanf(buf, "%x", &addr))
+          continue;
 
-      cpu->_disasm.push_back(make_pair(addr, buf));
+        // remove trailing \n
+        if (char* newline = strchr(buf, '\n'))
+          *newline = 0;
+
+        cpu->_disasm.push_back(make_pair(addr, buf));
+      }
+
+      fclose(fDisasm);
     }
-
-    fclose(fDisasm);
 
     return Status::OK;
   }
