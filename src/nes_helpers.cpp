@@ -112,7 +112,7 @@ namespace nes
 #ifdef _WIN32
     const char* fontName = "/projects/nesthing/ProggyClean.ttf";
 #else
-    const char* fontName = "/users/dooz/projects/nesthing/ProggyClean.ttf";
+    const char* fontName = "/users/magnus/projects/nesthing/ProggyClean.ttf";
 #endif
     if (!cpu->_font.loadFromFile(fontName))
     {

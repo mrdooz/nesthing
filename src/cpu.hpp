@@ -21,6 +21,18 @@ namespace nes
     u16 base;
     array<u8, 16*1024> data;
   };
+  
+  enum class Button
+  {
+    A,
+    B,
+    Select,
+    Start,
+    Up,
+    Down,
+    Left,
+    Right
+  };
 
   struct Cpu6502
   {
@@ -40,6 +52,8 @@ namespace nes
     void SetIp(u32 v);
     u8 SingleStep();
     Status Reset();
+    
+    void SetInput(Button btn, int controller);
 
     void Transfer(u8* dst, u8* src);
     void WriteRegisterAndFlags(u8* reg, u8 value);
@@ -122,7 +136,8 @@ namespace nes
     u8 m_storedFlags;
     bool m_inNmi;
 
-    bool m_loadButtonStates;
+    // A, B, Select, Start, Up, Down, Left, Right.
+    u8 m_tmpButtonState[8];
     u8 m_buttonState[8];
     u8 m_buttonIdx;
 

@@ -23,7 +23,6 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   , _freeMovement(true)
   , _cursorIp(0)
   , m_inNmi(false)
-  , m_loadButtonStates(false)
   , m_buttonIdx(0)
   , m_dmaBytesLeft(0)
 {
@@ -106,6 +105,14 @@ Status Cpu6502::Reset()
   return Status::OK;
 }
 
+void Cpu6502::SetInput(Button btn, int controller)
+{
+  // note, only controller 0 is supported right now
+  int btnIdx = (int)btn;
+  m_tmpButtonState[btnIdx] = true;
+}
+
+
 void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
 {
   switch (op)
@@ -158,8 +165,17 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
       break;
 
       case 0x4016:
-        // lsb controls if the button states should be read or not
-        m_loadButtonStates = (value & 1) != 0;
+        // a high lsb means read controller input into the shift register
+        if (value & 1)
+        {
+          memcpy(m_buttonState, m_tmpButtonState, sizeof(m_tmpButtonState));
+        }
+        else
+        {
+          m_buttonIdx = 0;
+          memset(m_tmpButtonState, 0, sizeof(m_tmpButtonState));
+//          memset(m_buttonState, 0, sizeof(m_buttonState));
+        }
         break;
 
     default:
@@ -340,6 +356,8 @@ u8 Cpu6502::SingleStep()
     }
   };
 
+  u8 tmp0, tmp1;
+  u16 tmp16;
   switch (op)
   {
     case OpCode::BRK:
@@ -490,13 +508,15 @@ u8 Cpu6502::SingleStep()
       lo = ReadMemory(addr);
     case OpCode::SBC_IMM:
       {
-        s16 res = (s8) _regs.a - (s8)lo - (1 - _flags.c);
-        WriteRegisterAndFlags(&_regs.a, (u8)res);
-        _flags.v = res > 127 || res < -128 ? 1 : 0;
-        _flags.c = res > 0 && res < 255;
+        tmp16 = (u16) _regs.a - (u16)lo - (1 - _flags.c);
+        tmp0 = (u8)tmp16;
+        tmp1 = _regs.a;
+        WriteRegisterAndFlags(&_regs.a, (u8)tmp16);
+        _flags.v = ((tmp1 ^ tmp0) & 0x80) && ((tmp1 ^ lo) & 0x80);
+        _flags.c = tmp16 < 0x100;
         break;
       }
-
+      
     case OpCode::ADC_ABS:
     case OpCode::ADC_ABS_X:
     case OpCode::ADC_ABS_Y:
@@ -661,10 +681,11 @@ u8 Cpu6502::SingleStep()
 
     case OpCode::PLA:
       _regs.a = Pop8();
+      SetFlags(_regs.a);
       break;
 
     case OpCode::PHP:
-      Push8(_flags.reg | 0x30);
+      Push8(_flags.reg);
       break;
 
     case OpCode::PLP:
@@ -680,27 +701,32 @@ u8 Cpu6502::SingleStep()
     case OpCode::CMP_ZPG_X:
       lo = ReadMemory(addr);
     case OpCode::CMP_IMM:
-      _flags.z = lo == (u8) _regs.a ? 1 : 0;
-      _flags.s = (_regs.a & 0x80) == 0x80 ? 1 : 0;
-      _flags.c = _regs.a >= lo ? 1 : 0;
+      tmp16 = _regs.a - lo;
+      WriteMemory(addr, (u8)tmp16);
+      SetFlags((u8)tmp16);
+      _flags.c = tmp16 < 0x100;
       break;
 
     case OpCode::CPX_ABS:
     case OpCode::CPX_ZPG:
       lo = ReadMemory(addr);
     case OpCode::CPX_IMM:
-      _flags.z = lo == (u8) _regs.x ? 1 : 0;
-      _flags.s = (_regs.x & 0x80) == 0x80 ? 1 : 0;
-      _flags.c = _regs.x >= lo ? 1 : 0;
+      tmp16 = (u16)_regs.x - (u16)lo;
+      tmp0 = (u8)tmp16;
+      WriteMemory(addr, tmp0);
+      SetFlags(tmp0);
+      _flags.c = tmp16 < 0x100;
       break;
-
+            
     case OpCode::CPY_ABS:
     case OpCode::CPY_ZPG:
       lo = ReadMemory(addr);
     case OpCode::CPY_IMM:
-      _flags.z = lo == (u8) _regs.y ? 1 : 0;
-      _flags.s = (_regs.y & 0x80) == 0x80 ? 1 : 0;
-      _flags.c = _regs.y >= lo ? 1 : 0;
+      tmp16 = (u16)_regs.y - (u16)lo;
+      tmp0 = (u8)tmp16;
+      WriteMemory(addr, tmp0);
+      SetFlags(tmp0);
+      _flags.c = tmp16 < 0x100;
       break;
 
       //////////////////////////////////////////////////////////////////////////

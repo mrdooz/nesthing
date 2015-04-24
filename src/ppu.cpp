@@ -1,6 +1,9 @@
 #include "ppu.hpp"
 #include "nes_helpers.hpp"
+
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 using namespace nes;
 #define DUMP_TO_STDOUT 0
@@ -131,7 +134,7 @@ void PPU::Tick()
         for (u32 s = 0; s < _numSprites; ++s)
         {
           const OamEntry& oam = _secondaryOam[s];
-          u32 yOfs = y - oam.vpos;
+          s32 yOfs = y - oam.vpos;
           s32 xOfs = (s32)x - (s32)oam.hpos;
           if (xOfs >= 0 && xOfs < 8)
           {
