@@ -115,27 +115,13 @@ void Cpu6502::SetInput(Button btn, int controller)
 
 void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
 {
-  switch (op)
-  {
-  case BinOp::OR:
-    {
-      *reg = *reg | value;
-      break;
-    }
-
-  case BinOp::AND:
-    {
-      *reg = *reg & value;
-      break;
-    }
-
-  case BinOp::XOR:
-    {
-      *reg = *reg ^ value;
-      break;
-    }
-
-  }
+  if (op == BinOp::OR)
+    *reg = *reg | value;
+  else if (op == BinOp::AND)
+    *reg = *reg & value;
+  else if (op == BinOp::XOR)
+    *reg = *reg ^ value;
+  
   SetFlags(*reg);
 }
 
@@ -191,6 +177,7 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
   }
 
 }
+
 u8 Cpu6502::ReadMemory(u16 addr)
 {
   if (addr >= 0x2000 && addr <= 0x2007)
@@ -685,7 +672,9 @@ u8 Cpu6502::SingleStep()
       break;
 
     case OpCode::PHP:
-      Push8(_flags.reg);
+      // bit 4 set if BRK/PHP
+      // bit 5 always set
+      Push8(_flags.reg | (0x30));
       break;
 
     case OpCode::PLP:
