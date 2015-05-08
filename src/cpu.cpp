@@ -243,6 +243,19 @@ u8 Cpu6502::Pop8()
   return _memory[0x100 + _regs.s];
 }
 
+u16 Cpu6502::CpuRead16(u16 addr)
+{
+  u8 lo = _memory[addr+0];
+  u8 hi = _memory[addr+1];
+  return (hi << 8) + lo;
+}
+
+bool Cpu6502::PageCrossed(u16 a, u16 b)
+{
+  // check the high bits to determine if a page boundary has been crossed
+  return (a & 0xff00) != (b & 0xff00);
+}
+
 u8 Cpu6502::SingleStep()
 {
   // If in a DMA transfer, just do the transfer
@@ -258,30 +271,41 @@ u8 Cpu6502::SingleStep()
   OpCode op = (OpCode)op8;
   if (!g_validOpCodes[op8])
   {
+    printf("Invalid op-code: %d\n", (int)op);
     ++_regs.ip;
     return 1;
   }
 
   // Load values depending on addressing mode
   AddressingMode addrMode = (AddressingMode)g_addressingModes[op8];
+  
+  // lo/hi are used when assigning values to registers. The idea is that in immediate
+  // addressing modes, lo is set in the switch clause below, while in non-immediate, the
+  // address is calculated, and this is then used to load lo.
   u8 lo = 0, hi = 0;
   u16 addr = 0;
+  bool pageCrossed = false;
   switch (addrMode)
   {
+    // Absolute (r = MEM[addr])
     case AddressingMode::ABS:
-      addr = _memory[_regs.ip+1] + (_memory[_regs.ip+2] << 8);
+      addr = CpuRead16(_regs.ip+1);
       break;
 
+    // Absolute (r = MEM[addr+X])
     case AddressingMode::ABS_X:
-      addr = _memory[_regs.ip+1] + (_memory[_regs.ip+2] << 8) + _regs.x;
+      addr = CpuRead16(_regs.ip+1) + _regs.x;
+      pageCrossed = PageCrossed(addr, addr - _regs.x);
       break;
-
+      
+    // Absolute (r = MEM[addr+Y])
     case AddressingMode::ABS_Y:
-      addr = _memory[_regs.ip+1] + (_memory[_regs.ip+2] << 8) + _regs.y;
+      addr = CpuRead16(_regs.ip+1) + _regs.y;
+      pageCrossed = PageCrossed(addr, addr - _regs.y);
       break;
 
     case AddressingMode::IMM:
-      lo = _memory[_regs.ip+1];
+      addr = _regs.ip+1;
       break;
 
     case AddressingMode::ZPG:
@@ -310,12 +334,15 @@ u8 Cpu6502::SingleStep()
       addr = lo + (hi << 8);
       break;
 
+    // Note, Indirected Index are always zero paged
     case AddressingMode::IND_Y:
-      addr = _memory[_regs.ip+1];
-      lo = ReadMemory(addr);
-      hi = ReadMemory(addr+1);
-      addr = lo + (hi << 8) + _regs.y;
+    {
+      u16 tmp0 = _memory[_regs.ip+1];
+      u16 tmp1 = CpuRead16(tmp0) + _regs.y;
+      addr = tmp1;
+      PageCrossed(tmp1, tmp1 - _regs.y);
       break;
+    }
 
     case AddressingMode::REL:
       lo = _memory[_regs.ip+1];
@@ -345,6 +372,8 @@ u8 Cpu6502::SingleStep()
 
   u8 tmp0, tmp1;
   u16 tmp16;
+  
+  // todo: make instruction families
   switch (op)
   {
     case OpCode::BRK:
@@ -432,8 +461,8 @@ u8 Cpu6502::SingleStep()
     case OpCode::AND_ZPG_X:
     case OpCode::AND_X_IND:
     case OpCode::AND_IND_Y:
-      lo = ReadMemory(addr);
     case OpCode::AND_IMM:
+      lo = ReadMemory(addr);
       DoBinOp(BinOp::AND, (s8*)&_regs.a, (s8)lo);
       break;
 
@@ -444,8 +473,8 @@ u8 Cpu6502::SingleStep()
     case OpCode::ORA_ZPG_X:
     case OpCode::ORA_X_IND:
     case OpCode::ORA_IND_Y:
-      lo = ReadMemory(addr);
     case OpCode::ORA_IMM:
+      lo = ReadMemory(addr);
       DoBinOp(BinOp::OR, (s8*)&_regs.a, (s8)lo);
       break;
 
@@ -456,8 +485,8 @@ u8 Cpu6502::SingleStep()
     case OpCode::EOR_ZPG_X:
     case OpCode::EOR_X_IND:
     case OpCode::EOR_IND_Y:
-      lo = ReadMemory(addr);
     case OpCode::EOR_IMM:
+      lo = ReadMemory(addr);
       DoBinOp(BinOp::XOR, (s8*)&_regs.a, (s8)lo);
       break;
 
@@ -492,10 +521,10 @@ u8 Cpu6502::SingleStep()
     case OpCode::SBC_X_IND:
     case OpCode::SBC_ZPG:
     case OpCode::SBC_ZPG_X:
-      lo = ReadMemory(addr);
     case OpCode::SBC_IMM:
+      lo = ReadMemory(addr);
       {
-        tmp16 = (u16) _regs.a - (u16)lo - (1 - _flags.c);
+        tmp16 = _regs.a - lo - (1 - _flags.c);
         tmp0 = (u8)tmp16;
         tmp1 = _regs.a;
         WriteRegisterAndFlags(&_regs.a, (u8)tmp16);
@@ -511,13 +540,18 @@ u8 Cpu6502::SingleStep()
     case OpCode::ADC_X_IND:
     case OpCode::ADC_ZPG:
     case OpCode::ADC_ZPG_X:
-      lo = ReadMemory(addr);
     case OpCode::ADC_IMM:
       {
-        s16 res = (s8)lo + (s8) _regs.a + _flags.c;
+        lo = ReadMemory(addr);
+        u8 a = _regs.a;
+        s16 res = (s16)lo + (s16)a + (s16)_flags.c;
         WriteRegisterAndFlags(&_regs.a, (u8)res);
-        _flags.v = res > 127 || res < -128 ? 1 : 0;
-        _flags.c = res > 255 ? 1 : 0;
+        
+//        _flags.v = res < 128 || res > 383;
+//        V = 1 when U1 + U2 <  128 or  U1 + U2 >  383 ($17F)
+//        _flags.v = !((a ^ lo) & 0x80) && ((a ^ lo) & 0x80) ? 1 : 0;
+        _flags.v = (res > 127 || res < -128) ? 1 : 0;
+        _flags.c = (res > 255) ? 1 : 0;
         break;
       }
 
@@ -636,8 +670,8 @@ u8 Cpu6502::SingleStep()
     case OpCode::LDA_ZPG_X:
     case OpCode::LDA_X_IND:
     case OpCode::LDA_IND_Y:
-      lo = ReadMemory(addr);
     case OpCode::LDA_IMM:
+      lo = ReadMemory(addr);
       WriteRegisterAndFlags(&_regs.a, lo);
       break;
 
@@ -645,8 +679,8 @@ u8 Cpu6502::SingleStep()
     case OpCode::LDX_ABS_Y:
     case OpCode::LDX_ZPG:
     case OpCode::LDX_ZPG_Y:
-      lo = ReadMemory(addr);
     case OpCode::LDX_IMM:
+      lo = ReadMemory(addr);
       WriteRegisterAndFlags(&_regs.x, lo);
       break;
 
@@ -654,8 +688,8 @@ u8 Cpu6502::SingleStep()
     case OpCode::LDY_ABS_X:
     case OpCode::LDY_ZPG:
     case OpCode::LDY_ZPG_X:
-      lo = ReadMemory(addr);
     case OpCode::LDY_IMM:
+      lo = ReadMemory(addr);
       WriteRegisterAndFlags(&_regs.y, lo);
       break;
 
@@ -688,8 +722,8 @@ u8 Cpu6502::SingleStep()
     case OpCode::CMP_IND_Y:
     case OpCode::CMP_ZPG:
     case OpCode::CMP_ZPG_X:
-      lo = ReadMemory(addr);
     case OpCode::CMP_IMM:
+      lo = ReadMemory(addr);
       tmp16 = _regs.a - lo;
       WriteMemory(addr, (u8)tmp16);
       SetFlags((u8)tmp16);
@@ -698,8 +732,8 @@ u8 Cpu6502::SingleStep()
 
     case OpCode::CPX_ABS:
     case OpCode::CPX_ZPG:
-      lo = ReadMemory(addr);
     case OpCode::CPX_IMM:
+      lo = ReadMemory(addr);
       tmp16 = (u16)_regs.x - (u16)lo;
       tmp0 = (u8)tmp16;
       WriteMemory(addr, tmp0);
@@ -709,8 +743,8 @@ u8 Cpu6502::SingleStep()
             
     case OpCode::CPY_ABS:
     case OpCode::CPY_ZPG:
-      lo = ReadMemory(addr);
     case OpCode::CPY_IMM:
+      lo = ReadMemory(addr);
       tmp16 = (u16)_regs.y - (u16)lo;
       tmp0 = (u8)tmp16;
       WriteMemory(addr, tmp0);
@@ -809,7 +843,16 @@ u8 Cpu6502::SingleStep()
     _cursorIp = _regs.ip;
   }
 
-  return g_instructionTiming[(u8)op];
+  const u8 INC_ON_PAGE_CROSS_MASK = 0x10;
+  const u8 BRANCH_INC_ON_PAGE_CROSS_MAX = 0x20;
+  const u8 TIMING_MASK = 0xf;
+  
+  u8 rawTime = g_instructionTiming[(u8)op];
+  u8 correctedTime = rawTime & TIMING_MASK;
+  if (pageCrossed && (rawTime & INC_ON_PAGE_CROSS_MASK))
+    correctedTime += 1;
+  
+  return correctedTime;
 }
 
 sf::Color ColorLerp(const sf::Color& a, const sf::Color& b, float t)

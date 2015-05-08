@@ -73,7 +73,9 @@ namespace nes
     void Push8(u8 value);
     u16 Pop16();
     u8 Pop8();
-
+    u16 CpuRead16(u16 addr);
+    bool PageCrossed(u16 a, u16 b);
+    
     void DoBinOp(BinOp op, s8* reg, u8 value);
     void UpdateCursorPos(int delta);
     void ToggleBreakpointAtCursor();
