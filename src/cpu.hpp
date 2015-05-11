@@ -59,6 +59,7 @@ namespace nes
     void WriteRegisterAndFlags(u8* reg, u8 value);
     void WriteMemory(u16 addr, u8 value);
     u8 ReadMemory(u16 addr);
+    u16 ReadMemory16(u16 addr);
 
     void SetFlags(u8 value);
 

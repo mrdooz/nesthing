@@ -296,266 +296,10 @@ struct Timer
 
 u32 g_nesPixels[256*240];
 
-int DebuggerMain(int argc, const char* argv[])
-{
-  // each tick of the main loop does 3 ppu ticks, and 1 cpu tick
-#ifdef _WIN32
-  if (!FindRoot())
-  {
-    return 1;
-  }
-  ifstream str("nesthing.brk");
-#else
-  ifstream str("/Users/dooz/projects/nesthing/nesthing.brk");
-#endif
-
-  u16 x;
-  while (str >> hex >> x)
-  {
-    g_cpu._breakpoints[x] = 1;
-  }
-
-  // Create the main window
-  sf::RenderWindow window(sf::VideoMode(1024, 768, 32), "It's just a NES thang");
-  window.setVerticalSyncEnabled(true);
-
-  bool useDisasm = argc >= 3;
-  if (!useDisasm)
-  {
-    printf("no disassemly found\n");
-  }
-
-  sf::RenderWindow mainWindow(sf::VideoMode(512, 480, 32), "...");
-  mainWindow.display();
-  sf::Texture mainTexture;
-  sf::Sprite mainSprite;
-  mainTexture.create(256, 240);
-  mainSprite.setTexture(mainTexture, true);
-
-  Status status = LoadINes(argv[1], useDisasm ? argv[2] : nullptr, &g_cpu, &g_ppu);
-  if (status != Status::OK)
-  {
-    printf("error loading rom: %s\n", argv[1]);
-    return (int)status;
-  }
-
-  g_cpu.Reset();
-  window.display();
-
-  // cpu cylces until the currently running instruction is done
-  u32 cpuDelay = 0;
-
-  bool done = false;
-  while (!done)
-  {
-    sf::Event event;
-
-    if (IsRunning())
-    {
-      g_ppu.Tick();
-      g_ppu.Tick();
-      g_ppu.Tick();
-
-      // Is there any currently executing CPU instruction?
-      if (cpuDelay > 0)
-        --cpuDelay;
-
-      if (cpuDelay == 0)
-      {
-        if (g_cpu.IpAtBreakpoint())
-        {
-          executing = false;
-        }
-        else
-        {
-          g_cpu.Tick();
-        }
-      }
-
-      size_t elapsedTimers[(int)Timer::Type::NumTimers];
-
-      if (elapsedTimers[(int)Timer::Type::Redraw])
-      {
-        window.clear();
-        g_cpu.RenderState(window);
-
-        mainTexture.update((u8*)g_nesPixels);
-        mainWindow.draw(mainSprite);
-        mainWindow.display();
-
-        window.display();
-      }
-
-      if (elapsedTimers[(int)Timer::Type::EventPoll])
-      {
-        window.pollEvent(event);
-        if (event.type == sf::Event::KeyReleased)
-        {
-          done = HandleKeyboardInput(event);
-        }
-      }
-    }
-    else
-    {
-      window.clear();
-      g_cpu.RenderState(window);
-      window.display();
-
-      window.waitEvent(event);
-      if (event.type == sf::Event::KeyReleased)
-      {
-        done = HandleKeyboardInput(event);
-      }
-    }
-  }
-
-  return 0;
-}
-
-#define CPU_TEST 1
-
-
-int EmulatorMain(int argc, const char* argv[])
-{
-  // run the emulator in real time
-  executing = true;
-
-  Status status;
-#ifdef CPU_TEST
-  status = LoadINes("/Users/magnus/Downloads/nestest.nes", nullptr, &g_cpu, &g_ppu);
-#else
-  if (argc < 2)
-    return 1;
-  
-  status = LoadINes(argv[1], nullptr, &g_cpu, &g_ppu);
-#endif
-  if (status != Status::OK)
-  {
-    printf("error loading rom: %s\n", argv[1]);
-    return (int)status;
-  }
-
-  sf::RenderWindow mainWindow(sf::VideoMode(512, 480, 32), "...");
-  sf::Texture mainTexture;
-  mainTexture.create(256, 240);
-  sf::Sprite mainSprite(mainTexture);
-
-  g_cpu.Reset();
-  mainWindow.display();
-
-  // NTSC subcarrier frequency: 39375000 / 11
-  // The master clock frequency is 6 times the subcarrier frequency
-  // see http://wiki.nesdev.com/w/index.php/Overscan
-  u64 masterClock = 39375000 / 11 * 6;
-
-  // ns between master, ppu and cpu ticks
-  double mcPeriod_ns = 1e9 / masterClock;
-  double ppuPeriod_ns = 1e9 / (masterClock / 4);
-  double cpuPeriod_ns = 1e9 / (masterClock / 12);
-
-  // keep track of accumulated time to know when to tick ppu/cpu
-  double ppuAcc_ns = 0;
-  double cpuAcc_ns = 0;
-  double mcAcc_ns = 0;
-
-  double elapsedTime_ns = 0;
-
-  u64 lastTick_ns = NowNanoseconds();
-  u64 totalTicks = 0;
-  u64 mcTicks = 0;
-  u64 cpuTicks = 0;
-  u64 ppuTicks = 0;
-
-  // cpu cylces until the currently running instruction is done
-  u32 cpuDelay = 0;
-  RollingAverage<double> avgTick(1000);
-
-  bool done = false;
-  while (!done)
-  {
-
-    sf::Event event;
-
-    u64 now_ns = NowNanoseconds();
-    double delta_ns = (double)(now_ns - lastTick_ns);
-    avgTick.AddSample(delta_ns);
-    lastTick_ns = now_ns;
-    elapsedTime_ns += delta_ns;
-
-    mcAcc_ns += delta_ns;
-    ppuAcc_ns += delta_ns;
-    cpuAcc_ns += delta_ns;
-
-    while (ppuAcc_ns > ppuPeriod_ns)
-    {
-      g_ppu.Tick();
-      ppuAcc_ns -= ppuPeriod_ns;
-      ++ppuTicks;
-
-      if (g_ppu.TriggerNmi())
-      {
-        mainTexture.update((u8*)g_nesPixels, 256, 240, 0, 0);
-        mainSprite.setTexture(mainTexture, true);
-        mainSprite.setScale(2, 2);
-        mainWindow.clear();
-        mainWindow.draw(mainSprite);
-        mainWindow.display();
-
-        g_cpu.ExecuteNmi();
-      }
-    }
-
-    while (cpuAcc_ns > cpuPeriod_ns)
-    {
-      // Is there any currently executing CPU instruction?
-      if (cpuDelay > 0)
-        --cpuDelay;
-
-      if (cpuDelay == 0)
-        g_cpu.Tick();
-
-      cpuAcc_ns -= cpuPeriod_ns;
-      ++cpuTicks;
-    }
-
-    while (mcAcc_ns > mcPeriod_ns)
-    {
-      mcAcc_ns -= mcPeriod_ns;
-      ++mcTicks;
-    }
-
-    ++totalTicks;
-
-    // add the time delta to the timers
-    s_timeElapsed.AddSample(delta_ns);
-
-    size_t elapsedTimers[(int)Timer::Type::NumTimers];
-
-    if (elapsedTimers[(int)Timer::Type::EventPoll])
-    {
-      mainWindow.pollEvent(event);
-      if (event.type == sf::Event::KeyReleased)
-      {
-        done = HandleKeyboardInput(event);
-      }
-    }
-  }
-
-  return 0;
-}
-
-#if 1
-
-#include <vector>
-
-using namespace std;
-
 static void error_callback(int error, const char* description)
 {
   fprintf(stderr, "Error %d: %s\n", error, description);
 }
-
-
 
 void updateTexture(GLuint& texture, const char* buf, int w, int h)
 {
@@ -627,6 +371,8 @@ int main(int argc, char** argv)
   RollingAverage<double> avgTick(1000);
   
   GLuint textureId = 0;
+  
+  u64 start_ns = NowNanoseconds();
 
   // Main loop
   while (!glfwWindowShouldClose(window))
@@ -686,14 +432,13 @@ int main(int argc, char** argv)
     // add the time delta to the timers
     s_timeElapsed.AddSample(delta_ns);
     
-
-    // read memory for nestest
-    u8 mem02 = g_cpu.ReadMemory(0x02);
-    u8 mem03 = g_cpu.ReadMemory(0x03);
     
     ImGui::Begin("Console output", &show_another_window);
     ImGui::Image((ImTextureID)textureId, ImVec2(256, 256));
-    ImGui::Text("nestest: %.2x%.2x", mem02, mem03);
+    double elapsed = (now_ns - start_ns) / 1e9;
+    ImGui::Text("CPU speed: %.2f hz", cpuTicks / elapsed);
+    ImGui::Text("PPU speed: %.2f hz", ppuTicks / elapsed);
+    ImGui::Text("MC speed: %.2f hz", mcTicks / elapsed);
     ImGui::End();
     
     // Rendering
@@ -710,18 +455,3 @@ int main(int argc, char** argv)
   
   return 0;
 }
-
-#else
-
-int main(int argc, const char * argv[])
-{
-//  int res = EmulatorMain(argc, argv);
-  int res = DebuggerMain(argc, argv);
-#ifdef _WIN32
-  OutputDebugStringA((const char*)&g_cpu._memory[0x6004]);
-#endif
-  //int res = DebuggerMain(argc, argv);
-
-  return res;
-}
-#endif

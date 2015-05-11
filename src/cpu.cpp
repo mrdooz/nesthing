@@ -51,10 +51,12 @@ void Cpu6502::ExecuteNmi()
   Push16(_regs.ip);
 
   // push regs on stack
-  Push8(_flags.reg);
+  u8 t = _flags.reg;
+  // set bit 54 to proper values (10)
+  t &= ~0x30;
+  t |= 0x20;
+  Push8(t);
 
-//  m_storedIp = _regs.ip;
-//  m_storedFlags = _flags.reg;
   _regs.ip = _interruptVector.nmi;
   m_inNmi = true;
 }
@@ -199,6 +201,12 @@ u8 Cpu6502::ReadMemory(u16 addr)
   return _memory[addr];
 }
 
+u16 Cpu6502::ReadMemory16(u16 addr)
+{
+  return ReadMemory(addr) + (ReadMemory(addr+1) << 8);
+}
+
+
 void Cpu6502::SetFlags(u8 value)
 {
   _flags.z = value == 0 ? 1 : 0;
@@ -269,15 +277,15 @@ u8 Cpu6502::SingleStep()
   switch (addrMode)
   {
     case AddressingMode::ABS:
-      addr = _memory[_regs.ip+1] + (_memory[_regs.ip+2] << 8);
+      addr = ReadMemory16(_regs.ip + 1);
       break;
 
     case AddressingMode::ABS_X:
-      addr = _memory[_regs.ip+1] + (_memory[_regs.ip+2] << 8) + _regs.x;
+      addr = ReadMemory16(_regs.ip + 1) + _regs.x;
       break;
 
     case AddressingMode::ABS_Y:
-      addr = _memory[_regs.ip+1] + (_memory[_regs.ip+2] << 8) + _regs.y;
+      addr = ReadMemory16(_regs.ip + 1) + _regs.y;
       break;
 
     case AddressingMode::IMM:
@@ -304,17 +312,17 @@ u8 Cpu6502::SingleStep()
       break;
 
     case AddressingMode::X_IND:
+      // addr is zeropage address
       addr = (_memory[_regs.ip+1] + _regs.x) & 0xff;
-      lo = ReadMemory(addr);
-      hi = ReadMemory(addr+1);
-      addr = lo + (hi << 8);
+      // read real address from zeropage
+      addr = ReadMemory16(addr);
       break;
 
     case AddressingMode::IND_Y:
+      // addr is zeropage
       addr = _memory[_regs.ip+1];
-      lo = ReadMemory(addr);
-      hi = ReadMemory(addr+1);
-      addr = lo + (hi << 8) + _regs.y;
+      // read zeropage address, and add Y
+      addr = ReadMemory16(addr) + _regs.y;
       break;
 
     case AddressingMode::REL:
@@ -590,7 +598,8 @@ u8 Cpu6502::SingleStep()
       break;
 
     case OpCode::TXS:
-      Transfer(&_regs.s, &_regs.x);
+      // Note, TXS doesn't set flags
+      _regs.s = _regs.x;
       break;
 
     case OpCode::TXA:

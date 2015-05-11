@@ -1,0 +1,47 @@
+<td nowrap>00</td><td nowrap>BRK impl</td><td nowrap>ORA X,ind</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>ORA zpg</td><td nowrap>ASL zpg</td><td nowrap>??? ---</td><td nowrap>PHP impl</td><td nowrap>ORA #</td><td nowrap>ASL A</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>ORA abs</td><td nowrap>ASL abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>10</td><td nowrap>BPL rel</td><td nowrap>ORA ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>ORA zpg,X</td><td nowrap>ASL zpg,X</td><td nowrap>??? ---</td><td nowrap>CLC impl</td><td nowrap>ORA abs,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>ORA abs,X</td><td nowrap>ASL abs,X</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>20</td><td nowrap>JSR abs</td><td nowrap>AND X,ind</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>BIT zpg</td><td nowrap>AND zpg</td><td nowrap>ROL zpg</td><td nowrap>??? ---</td><td nowrap>PLP impl</td><td nowrap>AND #</td><td nowrap>ROL A</td><td nowrap>??? ---</td><td nowrap>BIT abs</td><td nowrap>AND abs</td><td nowrap>ROL abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>30</td><td nowrap>BMI rel</td><td nowrap>AND ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>AND zpg,X</td><td nowrap>ROL zpg,X</td><td nowrap>??? ---</td><td nowrap>SEC impl</td><td nowrap>AND abs,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>AND abs,X</td><td nowrap>ROL abs,X</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>40</td><td nowrap>RTI impl</td><td nowrap>EOR X,ind</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>EOR zpg</td><td nowrap>LSR zpg</td><td nowrap>??? ---</td><td nowrap>PHA impl</td><td nowrap>EOR #</td><td nowrap>LSR A</td><td nowrap>??? ---</td><td nowrap>JMP abs</td><td nowrap>EOR abs</td><td nowrap>LSR abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>50</td><td nowrap>BVC rel</td><td nowrap>EOR ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>EOR zpg,X</td><td nowrap>LSR zpg,X</td><td nowrap>??? ---</td><td nowrap>CLI impl</td><td nowrap>EOR abs,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>EOR abs,X</td><td nowrap>LSR abs,X</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>60</td><td nowrap>RTS impl</td><td nowrap>ADC X,ind</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>ADC zpg</td><td nowrap>ROR zpg</td><td nowrap>??? ---</td><td nowrap>PLA impl</td><td nowrap>ADC #</td><td nowrap>ROR A</td><td nowrap>??? ---</td><td nowrap>JMP ind</td><td nowrap>ADC abs</td><td nowrap>ROR abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>70</td><td nowrap>BVS rel</td><td nowrap>ADC ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>ADC zpg,X</td><td nowrap>ROR zpg,X</td><td nowrap>??? ---</td><td nowrap>SEI impl</td><td nowrap>ADC abs,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>ADC abs,X</td><td nowrap>ROR abs,X</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>80</td><td nowrap>??? ---</td><td nowrap>STA X,ind</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>STY zpg</td><td nowrap>STA zpg</td><td nowrap>STX zpg</td><td nowrap>??? ---</td><td nowrap>DEY impl</td><td nowrap>??? ---</td><td nowrap>TXA impl</td><td nowrap>??? ---</td><td nowrap>STY abs</td><td nowrap>STA abs</td><td nowrap>STX abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>90</td><td nowrap>BCC rel</td><td nowrap>STA ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>STY zpg,X</td><td nowrap>STA zpg,X</td><td nowrap>STX zpg,Y</td><td nowrap>??? ---</td><td nowrap>TYA impl</td><td nowrap>STA abs,Y</td><td nowrap>TXS impl</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>STA abs,X</td><td nowrap>??? ---</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>A0</td><td nowrap>LDY #</td><td nowrap>LDA X,ind</td><td nowrap>LDX #</td><td nowrap>??? ---</td><td nowrap>LDY zpg</td><td nowrap>LDA zpg</td><td nowrap>LDX zpg</td><td nowrap>??? ---</td><td nowrap>TAY impl</td><td nowrap>LDA #</td><td nowrap>TAX impl</td><td nowrap>??? ---</td><td nowrap>LDY abs</td><td nowrap>LDA abs</td><td nowrap>LDX abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>B0</td><td nowrap>BCS rel</td><td nowrap>LDA ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>LDY zpg,X</td><td nowrap>LDA zpg,X</td><td nowrap>LDX zpg,Y</td><td nowrap>??? ---</td><td nowrap>CLV impl</td><td nowrap>LDA abs,Y</td><td nowrap>TSX impl</td><td nowrap>??? ---</td><td nowrap>LDY abs,X</td><td nowrap>LDA abs,X</td><td nowrap>LDX abs,Y</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>C0</td><td nowrap>CPY #</td><td nowrap>CMP X,ind</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>CPY zpg</td><td nowrap>CMP zpg</td><td nowrap>DEC zpg</td><td nowrap>??? ---</td><td nowrap>INY impl</td><td nowrap>CMP #</td><td nowrap>DEX impl</td><td nowrap>??? ---</td><td nowrap>CPY abs</td><td nowrap>CMP abs</td><td nowrap>DEC abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>D0</td><td nowrap>BNE rel</td><td nowrap>CMP ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>CMP zpg,X</td><td nowrap>DEC zpg,X</td><td nowrap>??? ---</td><td nowrap>CLD impl</td><td nowrap>CMP abs,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>CMP abs,X</td><td nowrap>DEC abs,X</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>E0</td><td nowrap>CPX #</td><td nowrap>SBC X,ind</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>CPX zpg</td><td nowrap>SBC zpg</td><td nowrap>INC zpg</td><td nowrap>??? ---</td><td nowrap>INX impl</td><td nowrap>SBC #</td><td nowrap>NOP impl</td><td nowrap>??? ---</td><td nowrap>CPX abs</td><td nowrap>SBC abs</td><td nowrap>INC abs</td><td nowrap>??? ---</td>
+<tr>
+<tr valign="top">
+<td nowrap>F0</td><td nowrap>BEQ rel</td><td nowrap>SBC ind,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>SBC zpg,X</td><td nowrap>INC zpg,X</td><td nowrap>??? ---</td><td nowrap>SED impl</td><td nowrap>SBC abs,Y</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>??? ---</td><td nowrap>SBC abs,X</td><td nowrap>INC abs,X</td><td nowrap>??? ---</td>
+<tr>
