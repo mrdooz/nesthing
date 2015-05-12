@@ -15,7 +15,6 @@
 #include <istream>
 #include <fstream>
 #include <iomanip>
-//#include <boost/posix_time.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -43,151 +42,9 @@ namespace nes
   PPU g_ppu;
   MMC1 g_mmc1;
   Cpu6502 g_cpu(&g_ppu, &g_mmc1);
-
-  bool executing = true;
-  bool runUntilReturn = false;
-  bool runUntilBranch = false;
-
-  bool IsRunning()
-  {
-    return executing || runUntilBranch || runUntilReturn;
-  }
 }
-
 
 RollingAverage<double> s_timeElapsed(100);
-
-bool HandleKeyboardInput(const sf::Event& event)
-{
-  switch (event.key.code)
-  {
-    case sf::Keyboard::Escape:
-    {
-      return true;
-    }
-
-    case sf::Keyboard::B:
-    {
-      runUntilBranch = true;
-      break;
-    }
-
-    case sf::Keyboard::S:
-      g_ppu.DumpVRom();
-      break;
-
-    case sf::Keyboard::O:
-      runUntilReturn = true;
-      break;
-
-    case sf::Keyboard::Z:
-      g_cpu._flags.z ^= g_cpu._flags.z;
-      break;
-
-    case sf::Keyboard::R:
-      g_cpu.Reset();
-      break;
-
-    case sf::Keyboard::F5:
-      executing = !executing;
-      printf("executing: %s\n", executing ? "Y" : "N");
-      break;
-
-    case sf::Keyboard::F11:
-    case sf::Keyboard::F7:
-      g_cpu.SingleStep();
-      break;
-
-    case sf::Keyboard::F8:
-      g_cpu.StepOver();
-      break;
-
-    case sf::Keyboard::F9:
-      g_cpu.ToggleBreakpointAtCursor();
-      break;
-
-    case sf::Keyboard::F10:
-      if (event.key.shift)
-      {
-        g_cpu.RunToCursor();
-        executing = true;
-      }
-      break;
-
-    case sf::Keyboard::PageUp:
-    {
-      g_cpu._disasmOfs -= 20;
-      break;
-    }
-
-    case sf::Keyboard::Up:
-    {
-      g_cpu.UpdateCursorPos(-1);
-      break;
-    }
-
-    case sf::Keyboard::Down:
-    {
-      g_cpu.UpdateCursorPos(1);
-      break;
-    }
-
-    case sf::Keyboard::PageDown:
-    {
-      g_cpu._disasmOfs += 20;
-      break;
-    }
-
-    case sf::Keyboard::Home:
-    {
-      g_cpu._disasmOfs = 0;
-      break;
-    }
-
-    case sf::Keyboard::Space:
-      executing = false;
-      break;
-
-    case sf::Keyboard::J:
-    {
-      g_cpu._memoryOfs += 10 * 16;
-      break;
-    }
-
-    case sf::Keyboard::K:
-    {
-      g_cpu._memoryOfs -= 10 * 16;
-      break;
-    }
-
-  }
-  return false;
-}
-
-bool FindRoot()
-{
-  // find the app.root
-  string cur = CurrentDirectory();
-  string prev = cur;
-  while (true)
-  {
-    if (FileExists("app.root"))
-    {
-      return true;
-    }
-
-    chdir("..");
-
-    // break if at the root
-    string tmp = CurrentDirectory();
-    if (tmp == prev)
-    {
-      return false;
-    }
-    prev = tmp;
-  }
-  return false;
-}
 
 #ifdef _WIN32
 u64 NowNanoseconds()
@@ -214,86 +71,6 @@ u64 NowNanoseconds()
 }
 #endif
 
-struct Timer
-{
-  enum class Type
-  {
-    EventPoll,
-    Redraw,
-    CPU,
-    PPU,
-    OneSecond,
-    NumTimers
-  };
-
-  Timer()
-  {
-#ifdef _WIN32
-    QueryPerformanceFrequency(&_performanceFrequency);
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-#endif
-
-    for (size_t i = 0; i < (int)Type::NumTimers; ++i)
-    {
-#ifdef _WIN32
-      _lastTick[i] = now.QuadPart;
-#else
-      _lastTick[i] = mach_absolute_time();
-#endif
-    }
-  }
-
-  void SetInterval(Type type, u64 interval)
-  {
-    _interval[(int)type] = interval;
-  }
-
-  void Elapsed(size_t* numTicks)
-  {
-#ifdef _WIN32
-    LARGE_INTEGER tmp;
-    QueryPerformanceCounter(&tmp);
-    u64 now = tmp.QuadPart;
-#else
-    u64 now = mach_absolute_time();
-#endif
-
-    size_t numTimers = (size_t)Type::NumTimers;
-    // iterate all the timers, and calc number of ticks for each one
-    for (size_t i = 0; i < numTimers; ++i)
-    {
-      if (_interval[i] == 0)
-        continue;
-
-      u64 lastTick = _lastTick[i];
-      u64 delta = now - lastTick;
-#ifdef _WIN32
-      u64 deltaNs = NANOSECOND * (now - lastTick) / _performanceFrequency.QuadPart;
-#else
-      Nanoseconds deltaNsTmp = AbsoluteToNanoseconds(*(AbsoluteTime*)&delta);
-      u64 deltaNs = *(u64*)&deltaNsTmp;
-#endif
-      if (deltaNs < _interval[i])
-      {
-        numTicks[i] = 0;
-      }
-      else
-      {
-        // set # ticks, and update last tick
-        numTicks[i] = (size_t)(deltaNs / _interval[i]);
-        _lastTick[i] = now;
-      }
-    }
-  }
-
-#ifdef _WIN32
-  LARGE_INTEGER _performanceFrequency;
-#endif
-  u64 _lastTick[(int)Type::NumTimers];
-  u64 _interval[(int)Type::NumTimers];
-};
-
 u32 g_nesPixels[256*240];
 
 static void error_callback(int error, const char* description)
@@ -303,14 +80,18 @@ static void error_callback(int error, const char* description)
 
 void updateTexture(GLuint& texture, const char* buf, int w, int h)
 {
-  if(texture != 0){
+  if (texture != 0)
+  {
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_BYTE, buf);
-  } else {
+  }
+  else
+  {
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, 4, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
   }
+
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 }
@@ -329,12 +110,9 @@ int main(int argc, char** argv)
   ImGui_ImplGlfw_Init(window, true);
   
   bool show_another_window = false;
-  ImVec4 clear_color = ImColor(114, 144, 154);
+  ImVec4 clearColor = ImColor(114, 144, 154);
 
-  // run the emulator in real time
-  executing = true;
-  
-  Status status = LoadINes(argv[1], nullptr, &g_cpu, &g_ppu);
+  Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
 //    printf("error loading rom: %s\n", argv[1]);
@@ -443,7 +221,7 @@ int main(int argc, char** argv)
     
     // Rendering
     glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);
-    glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
+    glClearColor(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui::Render();
     glfwSwapBuffers(window);

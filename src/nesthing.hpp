@@ -1,5 +1,4 @@
-#ifndef nesthing_nesthing_hpp
-#define nesthing_nesthing_hpp
+#pragma once
 
 #include <stdint.h>
 #include <vector>
@@ -8,9 +7,7 @@
 #include <algorithm>
 #include <unordered_set>
 #include <unordered_map>
-#include <SFML/Graphics.hpp>
-#include <SFML/System.hpp>
-#include <SFML/Graphics/Image.hpp>
+#include <map>
 
 namespace nes
 {
@@ -35,11 +32,6 @@ namespace nes
   using std::min;
   using std::map;
 
-  using sf::Window;
-  using sf::Image;
-  using sf::Vector2f;
-  using sf::Color;
-
   enum class Status
   {
     OK,
@@ -54,5 +46,3 @@ namespace nes
     FILE_READ_ERROR,
   };
 }
-
-#endif

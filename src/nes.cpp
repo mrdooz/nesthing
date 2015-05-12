@@ -2,17 +2,15 @@
 #include "cpu.hpp"
 #include "ppu.hpp"
 #include "mmc1.hpp"
+#include "nes_helpers.hpp"
 
 using namespace nes;
-
-#define SAFE_DELETE(x) { delete(x); (x) = 0; }
 
 NES::NES()
     : m_cpu(0)
     , m_ppu(0)
     , m_mmc1(0)
 {
-
 }
 
 NES::~NES()

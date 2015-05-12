@@ -63,25 +63,12 @@ namespace nes
 
     void SetFlags(u8 value);
 
-    void RenderState(sf::RenderWindow& window);
-    void RenderStack(sf::RenderWindow& window);
-    void RenderMemory(sf::RenderWindow& window, u16 ofs);
-    void RenderRegisters(sf::RenderWindow& window);
-    void RenderDisassembly(sf::RenderWindow& window);
-    bool ByteVisible(u16 addr) const;
-
     void Push16(u16 value);
     void Push8(u8 value);
     u16 Pop16();
     u8 Pop8();
 
     void DoBinOp(BinOp op, s8* reg, u8 value);
-    void UpdateCursorPos(int delta);
-    void ToggleBreakpointAtCursor();
-    void RunToCursor();
-    bool IpAtBreakpoint();
-    void StepOver();
-
     OpCode PeekOp();
 
     union
@@ -101,7 +88,6 @@ namespace nes
     } _flags;
 
     vector<u8> _memory;
-    vector<u8> _memoryAge;
 
     vector<PrgRom> _prgRom;
 
@@ -114,24 +100,15 @@ namespace nes
       u8 a, x, y;
     } _regs;
 
-    sf::Font _font;
-
     size_t _memoryOfs;
     size_t _disasmOfs;
 
     InterruptVectors _interruptVector;
 
-    enum {
-      PermanentBreakpoint = 1 << 0,
-      TemporaryBreakpoint = 1 << 1,
-    };
-    vector<u8> _breakpoints;
-
     // TODO: replace with a higher level NES thing that contains both the PPU and the CPU
     PPU* _ppu;
     //MMC1* m_mmc1;
 
-    bool _freeMovement;
     u16 _cursorIp;
     u16 m_storedIp;
     u8 m_storedFlags;
@@ -144,8 +121,6 @@ namespace nes
 
     u16 m_dmaReadAddr;
     u16 m_dmaBytesLeft;
-
-    vector<pair<u32, string>> _disasm;
   };
 }
 

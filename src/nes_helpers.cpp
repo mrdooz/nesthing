@@ -56,7 +56,7 @@ namespace nes
   }
 #endif
 
-  Status LoadINes(const char* filename, const char* disasm, Cpu6502* cpu, PPU* ppu)
+  Status LoadINes(const char* filename, Cpu6502* cpu, PPU* ppu)
   {
     FILE* f = fopen(filename, "rb");
     if (!f)
@@ -87,6 +87,7 @@ namespace nes
 
     size_t romBankSize = 0x4000;
     size_t vromBankSize = 0x2000;
+
     // copy the PRG ROM
     for (size_t i = 0; i < numBanks; ++i)
     {
@@ -107,43 +108,6 @@ namespace nes
     for (size_t i = 0; i < numVBanks; ++i)
     {
       memcpy(&ppu->_memory[i*vromBankSize], &vram[0], vromBankSize);
-    }
-
-#ifdef _WIN32
-    const char* fontName = "/projects/nesthing/ProggyClean.ttf";
-#else
-    const char* fontName = "/users/magnus/projects/nesthing/ProggyClean.ttf";
-#endif
-    if (!cpu->_font.loadFromFile(fontName))
-    {
-      return Status::FONT_NOT_FOUND;
-    }
-
-    if (disasm)
-    {
-      FILE* fDisasm = fopen(disasm, "rt");
-      if (!fDisasm)
-        return Status::DISASM_NOT_FOUND;
-
-      while (true)
-      {
-        char buf[256];
-        fgets(buf, sizeof(buf), fDisasm);
-        if (feof(fDisasm))
-          break;
-
-        u32 addr;
-        if (!sscanf(buf, "%x", &addr))
-          continue;
-
-        // remove trailing \n
-        if (char* newline = strchr(buf, '\n'))
-          *newline = 0;
-
-        cpu->_disasm.push_back(make_pair(addr, buf));
-      }
-
-      fclose(fDisasm);
     }
 
     return Status::OK;

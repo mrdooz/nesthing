@@ -9,18 +9,14 @@ using namespace nes;
 namespace
 {
   size_t MEMORY_SIZE = 64 * 1024;
-  u8 MEMORY_FADE = 32;
 }
 
 Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   : _memory(MEMORY_SIZE)
-  , _memoryAge(MEMORY_SIZE)
-  , _breakpoints(MEMORY_SIZE)
   , _currentBank(0)
   , _disasmOfs(0)
   , _memoryOfs(0)
   , _ppu(ppu)
-  , _freeMovement(true)
   , _cursorIp(0)
   , m_inNmi(false)
   , m_buttonIdx(0)
@@ -30,8 +26,6 @@ Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
 
   memset(&_regs, 0, sizeof(_regs));
   memset(m_buttonState, 0, sizeof(m_buttonState));
-  memset(_memoryAge.data(), 0, sizeof(MEMORY_SIZE));
-  memset(_breakpoints.data(), 0, sizeof(MEMORY_SIZE));
   _flags.r = 1;
 }
 
@@ -86,16 +80,16 @@ Status Cpu6502::Reset()
     _prgRom.back().base = 0xc000;
   }
 
-  if (_prgRom.size() == 2)
+  if (_prgRom.size() >= 2)
   {
     memcpy(&_memory[0x8000], &_prgRom[0].data[0], 16 * 1024);
     memcpy(&_memory[0xC000], &_prgRom[1].data[0], 16 * 1024);
   }
-  else
-  {
-    LOG("Invalid PRG-ROM count: %lu", _prgRom.size());
-    return Status::ERROR_LOADING_ROM;
-  }
+//  else
+//  {
+//    LOG("Invalid PRG-ROM count: %lu", _prgRom.size());
+//    return Status::ERROR_LOADING_ROM;
+//  }
 
   // Get the current interrupt table, and start executing the
   // reset interrupt
@@ -162,17 +156,11 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
         {
           m_buttonIdx = 0;
           memset(m_tmpButtonState, 0, sizeof(m_tmpButtonState));
-//          memset(m_buttonState, 0, sizeof(m_buttonState));
         }
         break;
 
     default:
-      if (!ByteVisible(addr))
-      {
-        _memoryOfs = addr;
-      }
       _memory[addr] = value;
-      _memoryAge[addr] = MEMORY_FADE;
       break;
     }
 
@@ -813,282 +801,5 @@ u8 Cpu6502::SingleStep()
     _regs.ip += opLength;
   }
 
-  if (_freeMovement)
-  {
-    _cursorIp = _regs.ip;
-  }
-
   return g_instructionTiming[(u8)op];
 }
-
-sf::Color ColorLerp(const sf::Color& a, const sf::Color& b, float t)
-{
-  return sf::Color(
-      (u8)(a.r +  t * (b.r - a.r)),
-      (u8)(a.g +  t * (b.g - a.g)),
-      (u8)(a.b +  t * (b.b - a.b)),
-      (u8)(a.a +  t * (b.a - a.a)));
-}
-
-void Cpu6502::RenderMemory(sf::RenderWindow& window, u16 ofs)
-{
-  sf::Vector2f pos(600,20);
-  sf::Text text;
-  text.setFont(_font);
-  text.setCharacterSize(16);
-
-  u8* p = &_memory[ofs];
-  u8* age = &_memoryAge[ofs];
-  for (size_t i = 0; i < 30; ++i)
-  {
-    pos.x = 600;
-    char buf[128];
-    // write address
-    sprintf(buf, "%.4x", (u32)(ofs + i * 16));
-    text.setString(buf);
-    text.setPosition(pos);
-    pos.x += 50;
-    text.setColor(sf::Color::White);
-    window.draw(text);
-
-    // write bytes, fading by age
-    for (size_t j = 0; j < 16; ++j)
-    {
-      if (age[j] > 0)
-      {
-        text.setColor(ColorLerp(sf::Color::White, sf::Color::Red, age[j] / (float)MEMORY_FADE));
-        age[j]--;
-      }
-      else
-      {
-        text.setColor(sf::Color::White);
-      }
-      sprintf(buf, "%.2x ", p[j]);
-      text.setString(buf);
-      text.setPosition(pos);
-      window.draw(text);
-      pos.x += 20;
-    }
-    p += 16;
-    age += 16;
-    pos.y += 15;
-  }
-}
-
-void Cpu6502::RenderStack(sf::RenderWindow& window)
-{
-  sf::Vector2f pos(500,20);
-  sf::Text text;
-  text.setFont(_font);
-  text.setCharacterSize(16);
-  text.setColor(sf::Color(255,255,255,255));
-
-  for (size_t i = 0; i < 30; ++i)
-  {
-    char buf[32];
-    u32 cur = 0x1ff - i * 2;
-    sprintf(buf, "%.4x %.2x%.2x", cur, _memory[cur], _memory[cur - 1]);
-    text.setString(buf);
-    text.setPosition(pos);
-    text.setColor(cur == 0x100 + _regs.s ? sf::Color::Yellow : sf::Color::White);
-    window.draw(text);
-    pos.y += 15;
-  }
-}
-
-void Cpu6502::UpdateCursorPos(int delta)
-{
-  // find current prg rom
-  for (auto& rom : _prgRom)
-  {
-    if (rom.base <= _regs.ip && rom.base + rom.data.size() > _regs.ip)
-    {
-
-      typedef pair<u32, string> Val;
-      auto it = find_if(_disasm.begin(), _disasm.end(), [=](const Val& a)
-      {
-        return a.first == _cursorIp;
-      });
-
-      if (it == _disasm.end())
-      {
-        return;
-      }
-
-      int idx = it - _disasm.begin();
-      idx = max(0, min((int)_disasm.size()-1, idx + delta));
-      _cursorIp = _disasm[idx].first;
-      return;
-    }
-  }
-}
-
-void Cpu6502::ToggleBreakpointAtCursor()
-{
-  _breakpoints[_cursorIp] = !_breakpoints[_cursorIp];
-
-  if (FILE* f = fopen("/Users/dooz/projects/nesthing/nesthing.brk", "wt"))
-  {
-    for (auto& b: _breakpoints)
-    {
-      fprintf(f, "0x%.4x\n", b);
-    }
-
-    fclose(f);
-  }
-}
-
-bool Cpu6502::IpAtBreakpoint()
-{
-  // To make things like "run to cursor" and "step over" easier, we
-  // insert temporary breakpoints into the breakpoint list. These are
-  // removed once hit
-  u8 bp = _breakpoints[_regs.ip];
-  if (bp == 0)
-    return false;
-
-  // reset the breakpoint if temporary
-  _breakpoints[_regs.ip] &= ~TemporaryBreakpoint;
-  return true;
-}
-
-
-void Cpu6502::RunToCursor()
-{
-  _breakpoints[_cursorIp] |= TemporaryBreakpoint;
-}
-
-void Cpu6502::StepOver()
-{
-  // check if the current instruction is a jump
-  OpCode op = PeekOp();
-  if (op == OpCode::JSR_ABS)
-    _breakpoints[_regs.ip + g_instrLength[(u32)OpCode::JSR_ABS]] |= TemporaryBreakpoint;
-  else
-    SingleStep();
-}
-
-bool Cpu6502::ByteVisible(u16 addr) const
-{
-  size_t memoryRows = 30;
-  return addr >= _memoryOfs && addr < _memoryOfs + memoryRows * 16;
-}
-
-
-void Cpu6502::RenderState(sf::RenderWindow& window)
-{
-  RenderRegisters(window);
-  RenderDisassembly(window);
-  RenderStack(window);
-  RenderMemory(window, _memoryOfs);
-}
-
-void Cpu6502::RenderRegisters(sf::RenderWindow& window)
-{
-  sf::Vector2f pos(0,0);
-  sf::Text text;
-  text.setFont(_font);
-  text.setCharacterSize(16);
-
-  // write flags
-  auto fnDrawFlag = [&](const char* flag, u8 value) {
-    text.setPosition(pos);
-    text.setColor(value ? sf::Color::Red : sf::Color::White);
-    text.setString(flag);
-    window.draw(text);
-    pos.x += 10;
-  };
-
-  auto fnRegister8 = [&](const char* reg, u8 value) {
-    text.setPosition(pos);
-    char buf[32];
-    int numChars = sprintf(buf, "%s: %.2x", reg, value);
-    text.setString(buf);
-    window.draw(text);
-    pos.x += numChars * 10;
-  };
-
-  auto fnRegister16 = [&](const char* reg, u16 value) {
-    text.setPosition(pos);
-    char buf[32];
-    int numChars = sprintf(buf, "%s: %.4x", reg, value);
-    text.setString(buf);
-    window.draw(text);
-    pos.x += numChars * 10;
-  };
-
-  fnDrawFlag("C", _flags.c);
-  fnDrawFlag("Z", _flags.z);
-  fnDrawFlag("I", _flags.i);
-  fnDrawFlag("D", _flags.d);
-  fnDrawFlag("B", _flags.b);
-  fnDrawFlag("V", _flags.v);
-  fnDrawFlag("S", _flags.s);
-
-  text.setColor(sf::Color::White);
-  pos.x += 20;
-  fnRegister8("A", _regs.a);
-  fnRegister8("X", _regs.x);
-  fnRegister8("Y", _regs.y);
-  fnRegister16("IP", _regs.ip);
-  fnRegister8("S", _regs.s);
-}
-
-void Cpu6502::RenderDisassembly(sf::RenderWindow& window)
-{
-  sf::Vector2f pos = sf::Vector2f(0, 20);
-  sf::Text text;
-  text.setFont(_font);
-  text.setCharacterSize(16);
-
-  auto& rom = _prgRom[_currentBank];
-  u32 ofs = _interruptVector.reset;
-
-  // Look for the current IP in the disassemble block (ideally it should always be there..)
-  typedef pair<u32, string> Val;
-  auto it = find_if(_disasm.begin(), _disasm.end(),
-      [=](const Val& a) { return a.first == (_freeMovement ? _cursorIp : _regs.ip); });
-
-  if (it == _disasm.end())
-    return;
-
-  sf::RectangleShape currentRect;
-  int rowHeight = 15;
-  int rowWidth = 400;
-
-  currentRect.setFillColor(Color::Transparent);
-  currentRect.setOutlineColor(Color::Blue);
-  currentRect.setOutlineThickness(2);
-  currentRect.setSize(sf::Vector2f((float)rowWidth, (float)rowHeight));
-
-  int startIdx = max(0, (int)(it - _disasm.begin()) - 10);
-  int endIdx = min((int)_disasm.size(), startIdx + 30);
-  int cnt = 0;
-  for (int i = startIdx; i < endIdx; ++i, ++cnt)
-  {
-    text.setPosition(pos);
-    const pair<u32, string>& d = _disasm[i];
-
-    u32 curIp = d.first;
-
-    text.setString(d.second.c_str());
-    if (_breakpoints[curIp] == PermanentBreakpoint)
-    {
-      text.setColor(curIp == _regs.ip ? sf::Color(255, 165, 0, 255) : sf::Color::Red);
-    }
-    else
-    {
-      text.setColor(curIp == _regs.ip ? sf::Color::Yellow : sf::Color::White);
-    }
-    if (curIp == _cursorIp)
-    {
-      currentRect.setPosition(pos.x, pos.y+3);
-      window.draw(currentRect);
-    }
-
-    window.draw(text);
-    pos.y += rowHeight;
-  }
-
-}
-

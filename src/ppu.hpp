@@ -10,8 +10,6 @@ namespace nes
     void Tick();
     void WriteMemory(u16 addr, u8 value);
     u8 ReadMemory(u16 addr);
-    void DumpVRom();
-    void DumpNameTable(u16 nameTableOfs, Image *image);
 
     void SetControl1(u8 value);
     void SetControl2(u8 value);

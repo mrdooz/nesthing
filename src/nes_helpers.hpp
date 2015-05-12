@@ -3,8 +3,18 @@
 #include "opcodes.hpp"
 #include "nesthing.hpp"
 
+#define SAFE_DELETE(x) { delete(x); (x) = 0; }
+
 namespace nes
 {
+
+  typedef uint8_t u8;
+
+  struct Color
+  {
+    Color(u8 r, u8 g, u8 b, u8 a = 1) : r(r), g(g), b(b), a(a) {}
+    u8 r, g, b, a;
+  };
   /*
  
    0-3      String "NES^Z" used to recognize .NES files.
@@ -101,7 +111,7 @@ namespace nes
 
   struct Cpu6502;
   struct PPU;
-  Status LoadINes(const char* filename, const char* disasmFile, Cpu6502* cpu, PPU* ppu);
+  Status LoadINes(const char* filename, Cpu6502* cpu, PPU* ppu);
 
   void DumpHeader1(const INesHeader1* header);
   void DumpHeader2(const INesHeader2* header);

@@ -10,7 +10,7 @@ using namespace nes;
 
 extern u32 g_nesPixels[256*240];
 
-u32 ColorToU32(const sf::Color& col)
+u32 ColorToU32(const nes::Color& col)
 {
   return (col.a << 24) + (col.r << 16) + (col.g << 8) + (col.b);
 }
@@ -160,7 +160,7 @@ void PPU::Tick()
         if (_curScanline >= 0)
         {
           g_nesPixels[_curScanline * 256 + _scanlineTick] = ColorToU32(
-            sf::Color(g_NesPalette[col*3+2], g_NesPalette[col*3+1], g_NesPalette[col*3+0], 0xff));
+            nes::Color(g_NesPalette[col*3+2], g_NesPalette[col*3+1], g_NesPalette[col*3+0], 0xff));
         }
       }
     }
@@ -336,60 +336,4 @@ bool PPU::TriggerNmi()
   bool tmp = _triggerNmi;
   _triggerNmi = false;
   return tmp;
-}
-
-
-void PPU::DumpNameTable(u16 nameTableOfs, Image *image)
-{
-  for (u16 tileY = 0; tileY < 30; ++tileY)
-  {
-    for (u16 tileX = 0; tileX < 32; ++tileX)
-    {
-      for (u16 i = 0; i < 8; ++i)
-      {
-        for (u16 j = 0; j < 8; ++j)
-        {
-          u32 x = tileX * 8 + j;
-          u32 y = tileY * 8 + i;
-
-          // tile for current pixel
-          u16 nameTable = _memory[nameTableOfs + tileY * 32 + tileX];
-
-          // the attribute table contains the upper 2 bits of the pallete for
-          // a 16x16 pixel block
-          u16 attributeX = x / 16;
-          u16 attributeY = y / 16;
-          u8 attributeByte = _memory[nameTableOfs + 0x3c0 + attributeY * 16 + attributeX];
-          u16 attributeOfsX = x & 0xf;
-          u16 attributeOfsY = y & 0xf;
-          u8 attributeMask = ((x >> 3) << 1) + ((y >> 3) << 2);
-          u8 attributeValue = (attributeByte >> attributeMask) & 0x3;
-
-          u16 tileOfsX = x & 7;
-          u16 tileOfsY = y & 7;
-
-          // fetch low bit for tile
-          u8 lowByte = _memory[nameTable * 16 + 0 + tileOfsY];
-          u8 highByte = _memory[nameTable * 16 + 8 + tileOfsY];
-
-          u16 ofs = 7 - tileOfsX;
-          u16 col = (attributeValue << 2) + ((lowByte >> ofs) & 1) + (((highByte >> ofs) & 1) << 1);
-          col = _memory[0x3f00 + col];
-
-          image->setPixel(x, y, sf::Color(g_NesPalette[col * 3 + 0], g_NesPalette[col * 3 + 1], g_NesPalette[col * 3 + 2], 0xff));
-        }
-      }
-    }
-  }
-}
-
-void PPU::DumpVRom()
-{
-  Image image;
-  image.create(32 * 8, 30 * 8);
-  DumpNameTable(0x2000, &image);
-  image.saveToFile("c:/temp/name_table0.png");
-
-  DumpNameTable(0x2400, &image);
-  image.saveToFile("c:/temp/name_table1.png");
 }
