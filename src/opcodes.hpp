@@ -3,7 +3,7 @@
 #include "nesthing.hpp"
 namespace nes
 {
-  enum class OpCode : u8
+  enum OpCode : u8
   {
     BRK        = 0x00,
     ORA_X_IND  = 0x01,

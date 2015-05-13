@@ -96,6 +96,46 @@ void updateTexture(GLuint& texture, const char* buf, int w, int h)
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 }
 
+void DrawDebugger()
+{
+  ImGui::Begin("Debugger");
+  ImGui::Text("IP: 0x%.4x", g_cpu._regs.ip);
+  ImGui::Columns(2);
+  ImGui::SetColumnOffset(1, 150);
+
+  u8* mem = g_cpu._memory.data();
+  u16 ip = g_cpu._regs.ip;
+  for (u32 i = 0; i < 20; ++i)
+  {
+    u8 op = mem[ip];
+    u32 len = g_instrLength[op];
+
+    switch (len)
+    {
+      case 1: ImGui::Text("%.4x    %.2x", ip, op); break;
+      case 2: ImGui::Text("%.4x    %.2x %.2x", ip, op, mem[ip+1]); break;
+      case 3: ImGui::Text("%.4x    %.2x %.2x %.2x", ip, op, mem[ip+1], mem[ip+2]); break;
+      case 4: ImGui::Text("%.4x    %.2x %.2x %.2x %.2x", ip, op, mem[ip+1], mem[ip+2], mem[ip+3]); break;
+      case 5: ImGui::Text("%.4x    %.2x %.2x %.2x %.2x %.2x", ip, op, mem[ip+1], mem[ip+2], mem[ip+3], mem[ip+4]); break;
+    }
+
+    ip += len;
+  }
+
+  ImGui::NextColumn();
+  ip = g_cpu._regs.ip;
+  for (u32 i = 0; i < 20; ++i)
+  {
+    ImGui::Text("tjong");
+    u8 op = mem[ip];
+    u32 len = g_instrLength[op];
+
+    ip += len;
+  }
+
+  ImGui::End();
+}
+
 int main(int argc, char** argv)
 {
   // Setup window
@@ -109,7 +149,6 @@ int main(int argc, char** argv)
   // Setup ImGui binding
   ImGui_ImplGlfw_Init(window, true);
   
-  bool show_another_window = false;
   ImVec4 clearColor = ImColor(114, 144, 154);
 
   Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
@@ -211,14 +250,17 @@ int main(int argc, char** argv)
     s_timeElapsed.AddSample(delta_ns);
     
     
-    ImGui::Begin("Console output", &show_another_window);
+    ImGui::Begin("Console output");
     ImGui::Image((ImTextureID)textureId, ImVec2(256, 256));
     double elapsed = (now_ns - start_ns) / 1e9;
     ImGui::Text("CPU speed: %.2f hz", cpuTicks / elapsed);
     ImGui::Text("PPU speed: %.2f hz", ppuTicks / elapsed);
     ImGui::Text("MC speed: %.2f hz", mcTicks / elapsed);
     ImGui::End();
-    
+
+    DrawDebugger();
+
+
     // Rendering
     glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);
     glClearColor(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
