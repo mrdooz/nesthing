@@ -1,7 +1,7 @@
 // ImGui GLFW binding with OpenGL
 // https://github.com/ocornut/imgui
 
-#include <imgui.h>
+#include "../imgui/imgui.h"
 #include "imgui_impl_glfw.h"
 
 // GLFW

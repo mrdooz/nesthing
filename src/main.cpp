@@ -17,6 +17,7 @@
 #include <iomanip>
 
 #ifdef _WIN32
+#define NOMINMAX
 #include <windows.h>
 #include <direct.h>
 #else
@@ -59,7 +60,7 @@ u64 NowNanoseconds()
   LARGE_INTEGER now;
   QueryPerformanceCounter(&now);
 
-  return NANOSECOND * now.QuadPart / _freq.QuadPart;
+  return 1e9 * now.QuadPart / _freq.QuadPart;
 }
 #else
 u64 NowNanoseconds()
@@ -83,7 +84,7 @@ void updateTexture(GLuint& texture, const char* buf, int w, int h)
   if (texture != 0)
   {
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_BYTE, buf);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
   }
   else
   {
