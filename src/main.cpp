@@ -60,7 +60,7 @@ u64 NowNanoseconds()
   LARGE_INTEGER now;
   QueryPerformanceCounter(&now);
 
-  return 1e9 * now.QuadPart / _freq.QuadPart;
+  return (u64)(1e9 * now.QuadPart / _freq.QuadPart);
 }
 #else
 u64 NowNanoseconds()
@@ -170,11 +170,14 @@ int main(int argc, char** argv)
   double mcPeriod_ns = 1e9 / masterClock;
   double ppuPeriod_ns = 1e9 / (masterClock / 4);
   double cpuPeriod_ns = 1e9 / (masterClock / 12);
+
+  double screenPeriod_ns = 1e9 / 20;
   
   // keep track of accumulated time to know when to tick ppu/cpu
   double ppuAcc_ns = 0;
   double cpuAcc_ns = 0;
   double mcAcc_ns = 0;
+  double screenAcc_ns = 0;
   
   double elapsedTime_ns = 0;
   
@@ -212,12 +215,14 @@ int main(int argc, char** argv)
     mcAcc_ns += delta_ns;
     ppuAcc_ns += delta_ns;
     cpuAcc_ns += delta_ns;
+    screenAcc_ns += delta_ns;
     
     while (ppuAcc_ns > ppuPeriod_ns)
     {
-      g_ppu.Tick();
       ppuAcc_ns -= ppuPeriod_ns;
       ++ppuTicks;
+
+      g_ppu.Tick();
       
       if (g_ppu.TriggerNmi())
       {
@@ -228,15 +233,15 @@ int main(int argc, char** argv)
     
     while (cpuAcc_ns > cpuPeriod_ns)
     {
+      cpuAcc_ns -= cpuPeriod_ns;
+      ++cpuTicks;
+
       // Is there any currently executing CPU instruction?
       if (cpuDelay > 0)
         --cpuDelay;
       
       if (cpuDelay == 0)
-        g_cpu.Tick();
-      
-      cpuAcc_ns -= cpuPeriod_ns;
-      ++cpuTicks;
+        cpuDelay = g_cpu.Tick();
     }
     
     while (mcAcc_ns > mcPeriod_ns)
@@ -251,23 +256,27 @@ int main(int argc, char** argv)
     s_timeElapsed.AddSample(delta_ns);
     
     
-    ImGui::Begin("Console output");
-    ImGui::Image((ImTextureID)textureId, ImVec2(256, 256));
-    double elapsed = (now_ns - start_ns) / 1e9;
-    ImGui::Text("CPU speed: %.2f hz", cpuTicks / elapsed);
-    ImGui::Text("PPU speed: %.2f hz", ppuTicks / elapsed);
-    ImGui::Text("MC speed: %.2f hz", mcTicks / elapsed);
-    ImGui::End();
+    if (screenAcc_ns > screenPeriod_ns)
+    {
+      ImGui::Begin("Console output");
+      ImGui::Image((ImTextureID)textureId, ImVec2(256, 256));
+      double elapsed = (now_ns - start_ns) / 1e9;
+      ImGui::Text("CPU speed: %.2f hz", cpuTicks / elapsed);
+      ImGui::Text("PPU speed: %.2f hz", ppuTicks / elapsed);
+      ImGui::Text("MC speed: %.2f hz", mcTicks / elapsed);
+      ImGui::End();
 
-    DrawDebugger();
+      DrawDebugger();
 
+      // Rendering
+      glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);
+      glClearColor(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
+      glClear(GL_COLOR_BUFFER_BIT);
+      ImGui::Render();
+      glfwSwapBuffers(window);
 
-    // Rendering
-    glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);
-    glClearColor(clearColor.x, clearColor.y, clearColor.z, clearColor.w);
-    glClear(GL_COLOR_BUFFER_BIT);
-    ImGui::Render();
-    glfwSwapBuffers(window);
+      screenAcc_ns = 0;
+    }
   }
   
   // Cleanup

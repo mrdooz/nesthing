@@ -74,23 +74,28 @@ namespace nes
     void DoBinOp(BinOp op, u8* reg, u8 value);
     OpCode PeekOp();
 
-    union
+    struct CpuFlags
     {
-      struct
+      union
       {
-        u8 c : 1;   // carry
-        u8 z : 1;   // zero
-        u8 i : 1;   // interrupt disabled
-        u8 d : 1;   // decimal mode
-        u8 b : 1;   // software interrupt
-        u8 r : 1;   // reserved (1)
-        u8 v : 1;   // overflow
-        u8 s : 1;   // sign
+        struct
+        {
+          u8 c : 1;   // carry
+          u8 z : 1;   // zero
+          u8 i : 1;   // interrupt disabled
+          u8 d : 1;   // decimal mode
+          u8 b : 1;   // software interrupt
+          u8 r : 1;   // reserved (1)
+          u8 v : 1;   // overflow
+          u8 s : 1;   // sign
+        };
+        u8 reg;
       };
-      u8 reg;
-    } _flags;
+    };
 
-    static_assert(sizeof(_flags) == sizeof(u8), "invalid flag size");
+    CpuFlags _flags;
+
+    static_assert(sizeof(CpuFlags) == sizeof(u8), "invalid flag size");
 
     vector<u8> _memory;
 

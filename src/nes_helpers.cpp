@@ -56,13 +56,12 @@ namespace nes
     va_end(arg);
   }
 #endif
-
+  
   Status LoadINes(const char* filename, Cpu6502* cpu, PPU* ppu)
   {
     FILE* f = fopen(filename, "rb");
     if (!f)
       return Status::ROM_NOT_FOUND;
-
 
     fseek(f, 0, SEEK_END);
     long fileSize = ftell(f);
