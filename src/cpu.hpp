@@ -45,12 +45,9 @@ namespace nes
 
     Cpu6502(PPU* ppu, MMC1* mmc1);
 
-    void Tick();
+    u8 Tick();
     void ExecuteNmi();
     bool InNmi() const;
-
-    void SetIp(u32 v);
-    u8 SingleStep();
     Status Reset();
     
     void SetInput(Button btn, int controller);
@@ -61,14 +58,20 @@ namespace nes
     u8 ReadMemory(u16 addr);
     u16 ReadMemory16(u16 addr);
 
-    void SetFlags(u8 value);
+    u8 ReadCpuMemory8(u16 addr);
+    u16 ReadCpuMemory16(u16 addr);
+
+    void RelBranchOnFlag(u8 flag, u8 ofs);
+    void RelBranchOnNegFlag(u8 flag, u8 ofs);
+
+    void SetFlagsZS(u8 value);
 
     void Push16(u16 value);
     void Push8(u8 value);
     u16 Pop16();
     u8 Pop8();
 
-    void DoBinOp(BinOp op, s8* reg, u8 value);
+    void DoBinOp(BinOp op, u8* reg, u8 value);
     OpCode PeekOp();
 
     union
@@ -87,10 +90,12 @@ namespace nes
       u8 reg;
     } _flags;
 
+    static_assert(sizeof(_flags) == sizeof(u8), "invalid flag size");
+
     vector<u8> _memory;
 
+    // TODO: some kind of cartridge abstraction here that implements bank switching etc
     vector<PrgRom> _prgRom;
-
     size_t _currentBank;
 
     struct  
@@ -100,18 +105,12 @@ namespace nes
       u8 a, x, y;
     } _regs;
 
-    size_t _memoryOfs;
-    size_t _disasmOfs;
-
     InterruptVectors _interruptVector;
 
     // TODO: replace with a higher level NES thing that contains both the PPU and the CPU
     PPU* _ppu;
     //MMC1* m_mmc1;
 
-    u16 _cursorIp;
-    u16 m_storedIp;
-    u8 m_storedFlags;
     bool m_inNmi;
 
     // A, B, Select, Start, Up, Down, Left, Right.

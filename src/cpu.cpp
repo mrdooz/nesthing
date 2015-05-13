@@ -14,10 +14,7 @@ namespace
 Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
   : _memory(MEMORY_SIZE)
   , _currentBank(0)
-  , _disasmOfs(0)
-  , _memoryOfs(0)
   , _ppu(ppu)
-  , _cursorIp(0)
   , m_inNmi(false)
   , m_buttonIdx(0)
   , m_dmaBytesLeft(0)
@@ -55,16 +52,6 @@ void Cpu6502::ExecuteNmi()
   m_inNmi = true;
 }
 
-void Cpu6502::Tick()
-{
-  SingleStep();
-}
-
-void Cpu6502::SetIp(u32 v)
-{
-  _regs.ip = v;
-}
-
 Status Cpu6502::Reset()
 {
   // Turn off interrupts
@@ -95,7 +82,6 @@ Status Cpu6502::Reset()
   // reset interrupt
   _interruptVector = *(InterruptVectors*)&_memory[0xfffa];
   _regs.ip = _interruptVector.reset;
-  _cursorIp = _regs.ip;
   _currentBank = 0;
 
   return Status::OK;
@@ -105,11 +91,11 @@ void Cpu6502::SetInput(Button btn, int controller)
 {
   // note, only controller 0 is supported right now
   int btnIdx = (int)btn;
-  m_tmpButtonState[btnIdx] = true;
+  m_tmpButtonState[btnIdx] = 1;
 }
 
 
-void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
+void Cpu6502::DoBinOp(BinOp op, u8* reg, u8 value)
 {
   if (op == BinOp::OR)
     *reg = *reg | value;
@@ -117,8 +103,8 @@ void Cpu6502::DoBinOp(BinOp op, s8* reg, u8 value)
     *reg = *reg & value;
   else if (op == BinOp::XOR)
     *reg = *reg ^ value;
-  
-  SetFlags(*reg);
+
+  SetFlagsZS(*reg);
 }
 
 void Cpu6502::WriteMemory(u16 addr, u8 value)
@@ -140,7 +126,7 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
     case 0x4014:
       // Enter DMA mode (writes 256 bytes to 0x2004, 2 bytes per cycle)
       // and write the first byte
-      m_dmaReadAddr = 0x100 * (u16)value;
+      m_dmaReadAddr = (u16)0x100u * (u16)value;
       m_dmaBytesLeft = 256;
       // HACK: write to 2003 to reset the ppu sprite offset
        _ppu->WriteMemory(0x2003, 0);
@@ -189,29 +175,43 @@ u8 Cpu6502::ReadMemory(u16 addr)
   return _memory[addr];
 }
 
+
+u8 Cpu6502::ReadCpuMemory8(u16 addr)
+{
+  return _memory[addr];
+}
+
+u16 Cpu6502::ReadCpuMemory16(u16 addr)
+{
+  u8 lo = _memory[addr];
+  u8 hi = _memory[addr+1];
+
+  return (hi << 8) + lo;
+}
+
 u16 Cpu6502::ReadMemory16(u16 addr)
 {
-  return ReadMemory(addr) + (ReadMemory(addr+1) << 8);
+  return ReadMemory(addr) + (ReadMemory(addr + (u16)1u) << 8);
 }
 
 
-void Cpu6502::SetFlags(u8 value)
+void Cpu6502::SetFlagsZS(u8 value)
 {
-  _flags.z = value == 0 ? 1 : 0;
-  _flags.s = value & 0x80 ? 1 : 0;
+  _flags.z = value == 0 ? (u8)1u : (u8)0u;
+  _flags.s = value & 0x80 ? (u8)1u : (u8)0u;
 }
 
 
 void Cpu6502::Transfer(u8* dst, u8* src)
 {
   *dst = *src;
-  SetFlags(*dst);
+  SetFlagsZS(*dst);
 }
 
 void Cpu6502::WriteRegisterAndFlags(u8* reg, u8 value)
 {
   *reg = value;
-  SetFlags(value);
+  SetFlagsZS(value);
 }
 
 void Cpu6502::Push16(u16 value)
@@ -239,7 +239,20 @@ u8 Cpu6502::Pop8()
   return _memory[0x100 + _regs.s];
 }
 
-u8 Cpu6502::SingleStep()
+
+void Cpu6502::RelBranchOnFlag(u8 flag, u8 ofs)
+{
+  if (flag)
+    _regs.ip += ofs;
+}
+
+void Cpu6502::RelBranchOnNegFlag(u8 flag, u8 ofs)
+{
+  if (!flag)
+    _regs.ip += ofs;
+}
+
+u8 Cpu6502::Tick()
 {
   // If in a DMA transfer, just do the transfer
   if (m_dmaBytesLeft)
@@ -250,71 +263,72 @@ u8 Cpu6502::SingleStep()
     return 2;
   }
 
-  u8 op8 = _memory[_regs.ip];
-  OpCode op = (OpCode)op8;
-  if (!g_validOpCodes[op8])
+  OpCode op = (OpCode)_memory[_regs.ip];
+  if (!g_validOpCodes[op])
   {
+    LOG("Invalid opcode %d at %d\n", op, _regs.ip);
     ++_regs.ip;
     return 1;
   }
 
-  // Load values depending on addressing mode
-  AddressingMode addrMode = (AddressingMode)g_addressingModes[op8];
-  u8 lo = 0, hi = 0;
+  AddressingMode addrMode = (AddressingMode)g_addressingModes[op];
+  u8 lo = 0;
   u16 addr = 0;
+  u8 imm8 = ReadCpuMemory8(_regs.ip + (u16)1);
+  u16 imm16 = ReadCpuMemory16(_regs.ip + (u16)1);
   switch (addrMode)
   {
     case AddressingMode::ABS:
-      addr = ReadMemory16(_regs.ip + 1);
+      addr = imm16;
       break;
 
     case AddressingMode::ABS_X:
-      addr = ReadMemory16(_regs.ip + 1) + _regs.x;
+      addr = imm16 + _regs.x;
       break;
 
     case AddressingMode::ABS_Y:
-      addr = ReadMemory16(_regs.ip + 1) + _regs.y;
+      addr = imm16 + _regs.y;
       break;
 
     case AddressingMode::IMM:
-      lo = _memory[_regs.ip+1];
+      // Note, the immediate addressing mode uses the immediate value directly, instead of doing an additional
+      // memory read
+      lo = imm8;
       break;
 
     case AddressingMode::ZPG:
-      addr = _memory[_regs.ip+1];
+      addr = imm8;
       break;
 
     case AddressingMode::ZPG_X:
-      addr = (_memory[_regs.ip+1] + _regs.x) & 0xff;
+      addr = (imm8 + _regs.x) & (u16)0xff;
       break;
 
     case AddressingMode::ZPG_Y:
-      addr = (_memory[_regs.ip+1] + _regs.y) & 0xff;
+      addr = (imm8 + _regs.y) & (u16)0xff;
       break;
 
     case AddressingMode::IND:
-      addr = _memory[_regs.ip+1] + (_memory[_regs.ip+2] << 8);
-      lo = ReadMemory(addr);
-      hi = ReadMemory(addr+1);
-      addr = lo + (hi << 8);
+      addr = imm16;
+      addr = ReadMemory16(addr);
       break;
 
     case AddressingMode::X_IND:
       // addr is zeropage address
-      addr = (_memory[_regs.ip+1] + _regs.x) & 0xff;
+      addr = (imm8 + _regs.x) & (u16)0xff;
       // read real address from zeropage
       addr = ReadMemory16(addr);
       break;
 
     case AddressingMode::IND_Y:
       // addr is zeropage
-      addr = _memory[_regs.ip+1];
+      addr = imm8;
       // read zeropage address, and add Y
       addr = ReadMemory16(addr) + _regs.y;
       break;
 
     case AddressingMode::REL:
-      lo = _memory[_regs.ip+1];
+      lo = imm8;
       break;
 
     case AddressingMode::IMPLIED:
@@ -322,30 +336,16 @@ u8 Cpu6502::SingleStep()
       break;
   }
 
-  int opLength = g_instrLength[op8];
+  int opLength = g_instrLength[op];
   bool ipUpdated = false;
-
-  auto fnBranchFlagNotSet = [&](u8 flag){
-    if (!flag)
-    {
-      _regs.ip += (s8)lo;
-    }
-  };
-
-  auto fnBranchFlagSet = [&](u8 flag){
-    if (flag)
-    {
-      _regs.ip += (s8)lo;
-    }
-  };
 
   u8 tmp0, tmp1;
   u16 tmp16;
   switch (op)
   {
     case OpCode::BRK:
-      Push16(_regs.ip + opLength - 1);
-      Push8(_flags.reg | 0x30);
+      Push16(_regs.ip + (u16)opLength - (u16)1);
+      Push8(_flags.reg | (u8)0x30);
       _flags.i = 1;
       _regs.ip = _interruptVector.brk;
       ipUpdated = true;
@@ -358,13 +358,13 @@ u8 Cpu6502::SingleStep()
     case OpCode::LSR_ZPG_X:
       {
         u8 t = op == OpCode::LSR_A ? _regs.a : ReadMemory(addr);
-        _flags.c = t & 1;
+        _flags.c = t & (u8)1;
         t = t >> 1;
         if (op == OpCode::LSR_A)
           _regs.a = t;
         else
           WriteMemory(addr, t);
-        SetFlags(t);
+        SetFlagsZS(t);
         break;
       }
 
@@ -375,13 +375,13 @@ u8 Cpu6502::SingleStep()
     case OpCode::ASL_ZPG_X:
       {
         u8 t = op == OpCode::ASL_A ? _regs.a : ReadMemory(addr);
-        _flags.c = (t & 0x80) ? 1 : 0;
+        _flags.c = (t & 0x80) ? (u8)1 : (u8)0;
         t = t << 1;
         if (op == OpCode::ASL_A)
           _regs.a = t;
         else
           WriteMemory(addr, t);
-        SetFlags(t);
+        SetFlagsZS(t);
         break;
       }
 
@@ -399,7 +399,7 @@ u8 Cpu6502::SingleStep()
           _regs.a = t;
         else
           WriteMemory(addr, t);
-        SetFlags(t);
+        SetFlagsZS(t);
         break;
       }
 
@@ -409,15 +409,15 @@ u8 Cpu6502::SingleStep()
     case OpCode::ROR_ZPG:
     case OpCode::ROR_ZPG_X:
       {
-        u8 t = op == OpCode::ROL_A ? _regs.a : ReadMemory(addr);
+        u8 t = op == OpCode::ROR_A ? _regs.a : ReadMemory(addr);
         u8 c = _flags.c;
         _flags.c = (t & 0x1) ? 1 : 0;
         t = (t >> 1) + (c ? 0x80 : 0);
-        if (op == OpCode::ROL_A)
+        if (op == OpCode::ROR_A)
           _regs.a = t;
         else
           WriteMemory(addr, t);
-        SetFlags(t);
+        SetFlagsZS(t);
         break;
       }
 
@@ -430,7 +430,7 @@ u8 Cpu6502::SingleStep()
     case OpCode::AND_IND_Y:
       lo = ReadMemory(addr);
     case OpCode::AND_IMM:
-      DoBinOp(BinOp::AND, (s8*)&_regs.a, (s8)lo);
+      DoBinOp(BinOp::AND, &_regs.a, lo);
       break;
 
     case OpCode::ORA_ABS:
@@ -442,7 +442,7 @@ u8 Cpu6502::SingleStep()
     case OpCode::ORA_IND_Y:
       lo = ReadMemory(addr);
     case OpCode::ORA_IMM:
-      DoBinOp(BinOp::OR, (s8*)&_regs.a, (s8)lo);
+      DoBinOp(BinOp::OR, &_regs.a, lo);
       break;
 
     case OpCode::EOR_ABS:
@@ -454,7 +454,7 @@ u8 Cpu6502::SingleStep()
     case OpCode::EOR_IND_Y:
       lo = ReadMemory(addr);
     case OpCode::EOR_IMM:
-      DoBinOp(BinOp::XOR, (s8*)&_regs.a, (s8)lo);
+      DoBinOp(BinOp::XOR, &_regs.a, lo);
       break;
 
     case OpCode::CLD:
@@ -536,7 +536,7 @@ u8 Cpu6502::SingleStep()
       {
         u8 tmp = ReadMemory(addr);
         --tmp;
-        SetFlags(tmp);
+        SetFlagsZS(tmp);
         WriteMemory(addr, tmp);
         break;
       }
@@ -557,7 +557,7 @@ u8 Cpu6502::SingleStep()
       {
         u8 tmp = ReadMemory(addr);
         ++tmp;
-        SetFlags(tmp);
+        SetFlagsZS(tmp);
         WriteMemory(addr, tmp);
         break;
       }
@@ -608,19 +608,19 @@ u8 Cpu6502::SingleStep()
     case OpCode::STA_ZPG_X:
     case OpCode::STA_X_IND:
     case OpCode::STA_IND_Y:
-      WriteMemory(addr, (u8) _regs.a);
+      WriteMemory(addr, _regs.a);
       break;
 
     case OpCode::STX_ABS:
     case OpCode::STX_ZPG:
     case OpCode::STX_ZPG_Y:
-      WriteMemory(addr, (u8) _regs.x);
+      WriteMemory(addr, _regs.x);
       break;
 
     case OpCode::STY_ABS:
     case OpCode::STY_ZPG:
     case OpCode::STY_ZPG_X:
-      WriteMemory(addr, (u8) _regs.y);
+      WriteMemory(addr, _regs.y);
       break;
 
       //////////////////////////////////////////////////////////////////////////
@@ -665,7 +665,7 @@ u8 Cpu6502::SingleStep()
 
     case OpCode::PLA:
       _regs.a = Pop8();
-      SetFlags(_regs.a);
+      SetFlagsZS(_regs.a);
       break;
 
     case OpCode::PHP:
@@ -689,7 +689,7 @@ u8 Cpu6502::SingleStep()
     case OpCode::CMP_IMM:
       tmp16 = _regs.a - lo;
       WriteMemory(addr, (u8)tmp16);
-      SetFlags((u8)tmp16);
+      SetFlagsZS((u8) tmp16);
       _flags.c = tmp16 < 0x100;
       break;
 
@@ -700,7 +700,7 @@ u8 Cpu6502::SingleStep()
       tmp16 = (u16)_regs.x - (u16)lo;
       tmp0 = (u8)tmp16;
       WriteMemory(addr, tmp0);
-      SetFlags(tmp0);
+      SetFlagsZS(tmp0);
       _flags.c = tmp16 < 0x100;
       break;
             
@@ -711,7 +711,7 @@ u8 Cpu6502::SingleStep()
       tmp16 = (u16)_regs.y - (u16)lo;
       tmp0 = (u8)tmp16;
       WriteMemory(addr, tmp0);
-      SetFlags(tmp0);
+      SetFlagsZS(tmp0);
       _flags.c = tmp16 < 0x100;
       break;
 
@@ -720,35 +720,35 @@ u8 Cpu6502::SingleStep()
       //////////////////////////////////////////////////////////////////////////
 
     case OpCode::BPL_REL:
-      fnBranchFlagNotSet(_flags.s);
+      RelBranchOnNegFlag(_flags.s, lo);
       break;
 
     case OpCode::BMI_REL:
-      fnBranchFlagSet(_flags.s);
+      RelBranchOnFlag(_flags.s, lo);
       break;
 
     case OpCode::BVC_REL:
-      fnBranchFlagNotSet(_flags.v);
+      RelBranchOnNegFlag(_flags.v, lo);
       break;
 
     case OpCode::BVS_REL:
-      fnBranchFlagSet(_flags.v);
+      RelBranchOnFlag(_flags.v, lo);
       break;
 
     case OpCode::BCC_REL:
-      fnBranchFlagNotSet(_flags.c);
+      RelBranchOnNegFlag(_flags.c, lo);
       break;
 
     case OpCode::BCS_REL:
-      fnBranchFlagSet(_flags.c);
+      RelBranchOnFlag(_flags.c, lo);
       break;
 
     case OpCode::BNE_REL:
-      fnBranchFlagNotSet(_flags.z);
+      RelBranchOnNegFlag(_flags.z, lo);
       break;
 
     case OpCode::BEQ_REL:
-      fnBranchFlagSet(_flags.z);
+      RelBranchOnFlag(_flags.z, lo);
       break;
 
     case OpCode::JMP_IND:
