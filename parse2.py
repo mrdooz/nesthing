@@ -30,17 +30,17 @@ addressing_mode = {
 format_str = {
     'impl': '',
     'A': 'A',
-    'abs': '$%.4x',
-    'abs,X' : '$%.4x,X',
-    'abs,Y' : '$%.4x, Y',
-    '#' : '#$%.4x',
-    'ind' : '($%.4x)',
-    'X,ind' : '(X, $%.4x)',
-    'ind,Y' : '($%.4x),Y',
-    'rel': '$%.4x',
-    'zpg': '($%.2x)',
-    'zpg,X' : '($%.4x,X)',
-    'zpg,Y' : '($%.4x,Y)',
+    'abs': '$%.4X',
+    'abs,X' : '$%.4X,X',
+    'abs,Y' : '$%.4X, Y',
+    '#' : '#$%.2X',
+    'ind' : '($%.2X)',
+    'X,ind' : '(X, $%.2X)',
+    'ind,Y' : '($%.2X),Y',
+    'rel': '$%.2X',
+    'zpg': '($%.2X)',
+    'zpg,X' : '($%.4X,X)',
+    'zpg,Y' : '($%.4X,Y)',
 }
 
 opcode_desc = {

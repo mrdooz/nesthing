@@ -252,13 +252,13 @@ u8 Cpu6502::Pop8()
 void Cpu6502::RelBranchOnFlag(u8 flag, u8 ofs)
 {
   if (flag)
-    _regs.ip += ofs;
+    _regs.ip += (s8)ofs;
 }
 
 void Cpu6502::RelBranchOnNegFlag(u8 flag, u8 ofs)
 {
   if (!flag)
-    _regs.ip += ofs;
+    _regs.ip += (s8)ofs;
 }
 
 u8 Cpu6502::Tick()

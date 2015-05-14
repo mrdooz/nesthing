@@ -45,8 +45,6 @@ namespace nes
   Cpu6502 g_cpu(&g_ppu, &g_mmc1);
 }
 
-RollingAverage<double> s_timeElapsed(100);
-
 #ifdef _WIN32
 u64 NowNanoseconds()
 {
@@ -131,11 +129,24 @@ void DrawDebugger()
     u8 addressingMode = g_addressingModes[op];
     switch (addressingMode)
     {
-      case IMPLIED:
+      case IMPLIED: case ACC:
         ImGui::Text(g_formatStrings[op]);
         break;
-      default:
-        ImGui::Text(g_formatStrings[op], mem[ip+1]);
+
+      case ABS: case ABS_X: case ABS_Y:
+        ImGui::Text(g_formatStrings[op], mem[ip + 1] + (mem[ip + 2] << 8));
+        break;
+
+      case IMM: case ZPG: case ZPG_X: case ZPG_Y: case REL: case IND: case X_IND: case IND_Y:
+        if (g_branchingOpCodes[op] == 1)
+          // relative
+          ImGui::Text(g_formatStrings[op], ip + mem[ip + 1]);
+        else if (g_branchingOpCodes[op] == 2)
+          // absolute
+          ImGui::Text(g_formatStrings[op], mem[ip + 1]);
+        else
+          ImGui::Text(g_formatStrings[op], mem[ip + 1]);
+
         break;
     }
     u32 len = g_instrLength[op];
@@ -204,6 +215,13 @@ int main(int argc, char** argv)
   
   u64 start_ns = NowNanoseconds();
 
+  bool paused = true;
+  bool singleStep = false;
+
+  bool prevKeysDown[512];
+  memset(prevKeysDown, 0, 512);
+
+#define KEY_UP(k) prevKeysDown[k] && !io.KeysDown[k]
   // Main loop
   while (!glfwWindowShouldClose(window))
   {
@@ -211,59 +229,69 @@ int main(int argc, char** argv)
     ImGui_ImplGlfw_NewFrame();
     
     ImGuiIO& io = ImGui::GetIO();
-    if (io.KeysDown['W']) g_cpu.SetInput(Button::Up, 0);
-    if (io.KeysDown['S']) g_cpu.SetInput(Button::Down, 0);
-    if (io.KeysDown['R']) g_cpu.SetInput(Button::Start, 0);
-    
+    if (KEY_UP('W')) g_cpu.SetInput(Button::Up, 0);
+    if (KEY_UP('S')) g_cpu.SetInput(Button::Down, 0);
+    if (KEY_UP('R')) g_cpu.SetInput(Button::Start, 0);
+    if (KEY_UP('P')) paused = !paused;
+    if (KEY_UP('O')) { singleStep = true; paused = false; }
+
+    memcpy(prevKeysDown, io.KeysDown, 512);
+
     u64 now_ns = NowNanoseconds();
     double delta_ns = (double)(now_ns - lastTick_ns);
-    avgTick.AddSample(delta_ns);
     lastTick_ns = now_ns;
-    elapsedTime_ns += delta_ns;
-    
-    mcAcc_ns += delta_ns;
-    ppuAcc_ns += delta_ns;
-    cpuAcc_ns += delta_ns;
+    avgTick.AddSample(delta_ns);
     screenAcc_ns += delta_ns;
-    
-    while (ppuAcc_ns > ppuPeriod_ns)
-    {
-      ppuAcc_ns -= ppuPeriod_ns;
-      ++ppuTicks;
 
-      g_ppu.Tick();
-      
-      if (g_ppu.TriggerNmi())
+    if (!paused)
+    {
+      elapsedTime_ns += delta_ns;
+      mcAcc_ns += delta_ns;
+      ppuAcc_ns += delta_ns;
+      cpuAcc_ns += delta_ns;
+
+      while (ppuAcc_ns > ppuPeriod_ns)
       {
-        updateTexture(textureId, (const char*)g_nesPixels, 256, 240);
-        g_cpu.ExecuteNmi();
-      }
-    }
-    
-    while (cpuAcc_ns > cpuPeriod_ns)
-    {
-      cpuAcc_ns -= cpuPeriod_ns;
-      ++cpuTicks;
+        ppuAcc_ns -= ppuPeriod_ns;
+        ++ppuTicks;
 
-      // Is there any currently executing CPU instruction?
-      if (cpuDelay > 0)
-        --cpuDelay;
-      
-      if (cpuDelay == 0)
-        cpuDelay = g_cpu.Tick();
+        g_ppu.Tick();
+
+        if (g_ppu.TriggerNmi())
+        {
+          updateTexture(textureId, (const char*)g_nesPixels, 256, 240);
+          g_cpu.ExecuteNmi();
+        }
+      }
+
+      while (cpuAcc_ns > cpuPeriod_ns)
+      {
+        cpuAcc_ns -= cpuPeriod_ns;
+        ++cpuTicks;
+
+        // Is there any currently executing CPU instruction?
+        if (cpuDelay > 0)
+          --cpuDelay;
+
+        if (cpuDelay == 0)
+        {
+          cpuDelay = g_cpu.Tick();
+          if (singleStep)
+          {
+            singleStep = false;
+            paused = true;
+          }
+        }
+      }
+
+      while (mcAcc_ns > mcPeriod_ns)
+      {
+        mcAcc_ns -= mcPeriod_ns;
+        ++mcTicks;
+      }
+
+      ++totalTicks;
     }
-    
-    while (mcAcc_ns > mcPeriod_ns)
-    {
-      mcAcc_ns -= mcPeriod_ns;
-      ++mcTicks;
-    }
-    
-    ++totalTicks;
-    
-    // add the time delta to the timers
-    s_timeElapsed.AddSample(delta_ns);
-    
     
     if (screenAcc_ns > screenPeriod_ns)
     {
