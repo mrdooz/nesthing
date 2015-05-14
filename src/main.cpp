@@ -127,8 +127,17 @@ void DrawDebugger()
   ip = g_cpu._regs.ip;
   for (u32 i = 0; i < 20; ++i)
   {
-    ImGui::Text("tjong");
     u8 op = mem[ip];
+    u8 addressingMode = g_addressingModes[op];
+    switch (addressingMode)
+    {
+      case IMPLIED:
+        ImGui::Text(g_formatStrings[op]);
+        break;
+      default:
+        ImGui::Text(g_formatStrings[op], mem[ip+1]);
+        break;
+    }
     u32 len = g_instrLength[op];
 
     ip += len;

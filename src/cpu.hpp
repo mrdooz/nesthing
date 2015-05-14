@@ -18,8 +18,8 @@ namespace nes
 
   struct PrgRom
   {
-    u16 base;
     array<u8, 16*1024> data;
+    u16 bank;
   };
   
   enum class Button

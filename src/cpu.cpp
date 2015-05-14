@@ -60,23 +60,24 @@ Status Cpu6502::Reset()
   // Point the stack ptr to the top of the stack
   _regs.s = 0xff;
 
-  if (_prgRom.size() == 1)
+  size_t numBanks = _prgRom.size();
+  if (numBanks == 1)
   {
-    // copy the ROM at 0x8000 to 0xc000
-    _prgRom.push_back(_prgRom.front());
-    _prgRom.back().base = 0xc000;
+    // copy into both 0x8000 and 0xc000
+    memcpy(&_memory[0x8000], _prgRom[0].data.data(), 0x4000);
+    memcpy(&_memory[0xC000], _prgRom[0].data.data(), 0x4000);
   }
-
-  if (_prgRom.size() >= 2)
+  else if (numBanks == 2)
   {
-    memcpy(&_memory[0x8000], &_prgRom[0].data[0], 16 * 1024);
-    memcpy(&_memory[0xC000], &_prgRom[1].data[0], 16 * 1024);
+    memcpy(&_memory[0x8000], _prgRom[0].data.data(), 0x4000);
+    memcpy(&_memory[0xC000], _prgRom[1].data.data(), 0x4000);
   }
-//  else
-//  {
-//    LOG("Invalid PRG-ROM count: %lu", _prgRom.size());
-//    return Status::ERROR_LOADING_ROM;
-//  }
+  else
+  {
+    // more than 2 banks, so some kind of bank switching will be required
+    memcpy(&_memory[0x8000], _prgRom[0].data.data(), 0x4000);
+    memcpy(&_memory[0xC000], _prgRom[1].data.data(), 0x4000);
+  }
 
   // Get the current interrupt table, and start executing the
   // reset interrupt
@@ -146,8 +147,16 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
         break;
 
     default:
-      _memory[addr] = value;
-      break;
+      {
+        // CPU memory (0x0 - 0x7ff) is mirrored 4 times, so only the lower 11 address bits are used
+        u16 maskedAddr = addr & (u16)0x7ff;
+
+        _memory[maskedAddr + 0x0000] = value;
+        _memory[maskedAddr + 0x0800] = value;
+        _memory[maskedAddr + 0x1000] = value;
+        _memory[maskedAddr + 0x1800] = value;
+        break;
+      }
     }
 
   }

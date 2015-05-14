@@ -59,6 +59,8 @@ namespace nes
   
   Status LoadINes(const char* filename, Cpu6502* cpu, PPU* ppu)
   {
+    // TODO: this is a bit muddled up at the moment, as it treats the
+    // data stored in the .nes file as some kind of truth..
     FILE* f = fopen(filename, "rb");
     if (!f)
       return Status::ROM_NOT_FOUND;
@@ -82,6 +84,7 @@ namespace nes
       return Status::INVALID_MAPPER_VERSION;
     }
 
+    // TODO: Do I want some kind of MMC abstraction (that also handles the 1/2 bank configs)?
     size_t numBanks = header->numRomBanks;
     u8* base = &data[16 + (header->flags6.trainer ? 512 : 0)];
 
@@ -89,17 +92,19 @@ namespace nes
     size_t vromBankSize = 0x2000;
 
     // copy the PRG ROM
+    cpu->_prgRom.resize(numBanks);
     for (size_t i = 0; i < numBanks; ++i)
     {
-      PrgRom rom;
+      PrgRom& rom = cpu->_prgRom[i];
       memcpy(&rom.data[0], &base[i*romBankSize], romBankSize);
-      switch (i)
-      {
-        case 0: rom.base = 0x8000; break;
-        case 1: rom.base = 0xc000; break;
-        default: rom.base = 0; break;
-      }
-      cpu->_prgRom.emplace_back(rom);
+      rom.bank = i;
+//      switch (i)
+//      {
+//        case 0: rom.base = 0x8000; break;
+//        case 1: rom.base = 0xc000; break;
+//        default: rom.base = 0; break;
+//      }
+//      cpu->_prgRom.emplace_back(rom);
     }
 
     // copy VROM banks
@@ -306,5 +311,9 @@ namespace nes
     0xf8, 0xd8, 0xf8,
     0x00, 0x00, 0x00,
     0x00, 0x00, 0x00,
+  };
+
+  const char* g_formatStrings[] = {
+      "BRK","ORA (X, $%.4x)","","","","ORA ($%.2x)","ASL ($%.2x)","","PHP","ORA #$%.4x","ASL A","","","ORA $%.4x","ASL $%.4x","","BPL $%.4x","ORA ($%.4x),Y","","","","ORA ($%.4x,X)","ASL ($%.4x,X)","","CLC","ORA $%.4x, Y","","","","ORA $%.4x,X","ASL $%.4x,X","","JSR $%.4x","AND (X, $%.4x)","","","BIT ($%.2x)","AND ($%.2x)","ROL ($%.2x)","","PLP","AND #$%.4x","ROL A","","BIT $%.4x","AND $%.4x","ROL $%.4x","","BMI $%.4x","AND ($%.4x),Y","","","","AND ($%.4x,X)","ROL ($%.4x,X)","","SEC","AND $%.4x, Y","","","","AND $%.4x,X","ROL $%.4x,X","","RTI","EOR (X, $%.4x)","","","","EOR ($%.2x)","LSR ($%.2x)","","PHA","EOR #$%.4x","LSR A","","JMP $%.4x","EOR $%.4x","LSR $%.4x","","BVC $%.4x","EOR ($%.4x),Y","","","","EOR ($%.4x,X)","LSR ($%.4x,X)","","CLI","EOR $%.4x, Y","","","","EOR $%.4x,X","LSR $%.4x,X","","RTS","ADC (X, $%.4x)","","","","ADC ($%.2x)","ROR ($%.2x)","","PLA","ADC #$%.4x","ROR A","","JMP ($%.4x)","ADC $%.4x","ROR $%.4x","","BVS $%.4x","ADC ($%.4x),Y","","","","ADC ($%.4x,X)","ROR ($%.4x,X)","","SEI","ADC $%.4x, Y","","","","ADC $%.4x,X","ROR $%.4x,X","","","STA (X, $%.4x)","","","STY ($%.2x)","STA ($%.2x)","STX ($%.2x)","","DEY","","TXA","","STY $%.4x","STA $%.4x","STX $%.4x","","BCC $%.4x","STA ($%.4x),Y","","","STY ($%.4x,X)","STA ($%.4x,X)","STX ($%.4x,Y)","","TYA","STA $%.4x, Y","TXS","","","STA $%.4x,X","","","LDY #$%.4x","LDA (X, $%.4x)","LDX #$%.4x","","LDY ($%.2x)","LDA ($%.2x)","LDX ($%.2x)","","TAY","LDA #$%.4x","TAX","","LDY $%.4x","LDA $%.4x","LDX $%.4x","","BCS $%.4x","LDA ($%.4x),Y","","","LDY ($%.4x,X)","LDA ($%.4x,X)","LDX ($%.4x,Y)","","CLV","LDA $%.4x, Y","TSX","","LDY $%.4x,X","LDA $%.4x,X","LDX $%.4x, Y","","CPY #$%.4x","CMP (X, $%.4x)","","","CPY ($%.2x)","CMP ($%.2x)","DEC ($%.2x)","","INY","CMP #$%.4x","DEX","","CPY $%.4x","CMP $%.4x","DEC $%.4x","","BNE $%.4x","CMP ($%.4x),Y","","","","CMP ($%.4x,X)","DEC ($%.4x,X)","","CLD","CMP $%.4x, Y","","","","CMP $%.4x,X","DEC $%.4x,X","","CPX #$%.4x","SBC (X, $%.4x)","","","CPX ($%.2x)","SBC ($%.2x)","INC ($%.2x)","","INX","SBC #$%.4x","NOP","","CPX $%.4x","SBC $%.4x","INC $%.4x","","BEQ $%.4x","SBC ($%.4x),Y","","","","SBC ($%.4x,X)","INC ($%.4x,X)","","SED","SBC $%.4x, Y","","","","SBC $%.4x,X","INC $%.4x,X",""
   };
 }

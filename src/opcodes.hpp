@@ -158,7 +158,7 @@ namespace nes
     INC_ABS_X  = 0xfe
   };
 
-  enum class AddressingMode
+  enum AddressingMode
   {
     IMPLIED = 0,
     ACC,

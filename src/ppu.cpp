@@ -7,7 +7,6 @@
 #endif
 
 using namespace nes;
-#define DUMP_TO_STDOUT 0
 
 extern u32 g_nesPixels[256*240];
 
@@ -236,7 +235,7 @@ void PPU::SetControl2(u8 value)
 void PPU::WriteMemory(u16 addr, u8 value)
 {
   // only the lower 14 bits of addr are used
-  addr = addr & 0x3fff;
+  addr = addr & (u16)0x3fff;
 
   // 0x2000 - 0x2007 is mirrored between 0x2008 -> 0x3fff
   switch (0x2000 + (addr & 0x7))
@@ -295,14 +294,6 @@ void PPU::WriteMemory(u16 addr, u8 value)
     // Video RAM I/O register
     if (_writeAddr < _memory.size())
     {
-/*
-       if (_writeAddr >= 0x2000 && _writeAddr < 0x2800)
-       {
-         char buf[256];
-         sprintf(buf, "%.4x, %.2x\n", _writeAddr, value);
-         OutputDebugStringA(buf);
-       }
-*/
       _memory[_writeAddr] = value;
       _writeAddr += _control1.ppuAddressIncr ? 32 : 1;
     }

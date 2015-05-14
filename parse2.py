@@ -27,6 +27,22 @@ addressing_mode = {
     'zpg,Y' : (12, 'ZPG_Y')
 }
 
+format_str = {
+    'impl': '',
+    'A': 'A',
+    'abs': '$%.4x',
+    'abs,X' : '$%.4x,X',
+    'abs,Y' : '$%.4x, Y',
+    '#' : '#$%.4x',
+    'ind' : '($%.4x)',
+    'X,ind' : '(X, $%.4x)',
+    'ind,Y' : '($%.4x),Y',
+    'rel': '$%.4x',
+    'zpg': '($%.2x)',
+    'zpg,X' : '($%.4x,X)',
+    'zpg,Y' : '($%.4x,Y)',
+}
+
 opcode_desc = {
     'ADC': 'add with carry',
     'AND': 'and (with accumulator)',
@@ -94,10 +110,11 @@ cells = [tmp[i*17+1: i*17+17] for i in range(16)]
 
 for hi in range(16):
     for lo in range(16):
+        v = ((hi << 4) + lo)
         code = '%.2X' % ((hi << 4) + lo)
         op = cells[hi][lo]
         if op.startswith('???'):
-            opcodes[code] = None
+            opcodes[v] = None
         else:
             # split off the indexing mode
             fam, addr = op.split()
@@ -106,9 +123,18 @@ for hi in range(16):
                 'desc': opcode_desc[fam],
                 'mode': addressing_mode[addr],
                 'abs_branch': fam in branch_abs,
-                'rel_branch': fam in branch_rel
+                'rel_branch': fam in branch_rel,
+                'fmt_str': fam + ((' ' + format_str[addr]) if len(addressing_mode[addr][1]) > 0 else ''),
                 }
-            opcodes[code] = c
+            opcodes[v] = c
 
 
-pp.pprint(opcodes)
+# pp.pprint(opcodes)
+res = []
+for i in range(256):
+    if not opcodes[i]:
+        res.append('""')
+    else:
+        res.append('"' + opcodes[i]['fmt_str'] + '"')
+
+print ','.join(res)
