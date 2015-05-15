@@ -112,7 +112,8 @@ namespace nes
     size_t numVBanks = header->numVRomBanks;
     for (size_t i = 0; i < numVBanks; ++i)
     {
-      memcpy(&ppu->_memory[i*vromBankSize], &vram[0], vromBankSize);
+      memcpy(&ppu->_memory[i*vromBankSize], vram, vromBankSize);
+      vram += vromBankSize;
     }
 
     return Status::OK;
@@ -245,6 +246,7 @@ namespace nes
     9,8,0,0,0,11,11,0,0,4,0,0,0,3,3,0
   };
 
+  // RGB
   u8 g_NesPalette[] =
   {
     0x7c, 0x7c, 0x7c,
@@ -314,6 +316,6 @@ namespace nes
   };
 
   const char* g_formatStrings[] = {
-      "BRK", "ORA (X, $%.2X)", "", "", "", "ORA ($%.2X)", "ASL ($%.2X)", "", "PHP", "ORA #$%.2X", "ASL A", "", "", "ORA $%.4X", "ASL $%.4X", "", "BPL $%.2X", "ORA ($%.2X),Y", "", "", "", "ORA ($%.4X,X)", "ASL ($%.4X,X)", "", "CLC", "ORA $%.4X, Y", "", "", "", "ORA $%.4X,X", "ASL $%.4X,X", "", "JSR $%.4X", "AND (X, $%.2X)", "", "", "BIT ($%.2X)", "AND ($%.2X)", "ROL ($%.2X)", "", "PLP", "AND #$%.2X", "ROL A", "", "BIT $%.4X", "AND $%.4X", "ROL $%.4X", "", "BMI $%.2X", "AND ($%.2X),Y", "", "", "", "AND ($%.4X,X)", "ROL ($%.4X,X)", "", "SEC", "AND $%.4X, Y", "", "", "", "AND $%.4X,X", "ROL $%.4X,X", "", "RTI", "EOR (X, $%.2X)", "", "", "", "EOR ($%.2X)", "LSR ($%.2X)", "", "PHA", "EOR #$%.2X", "LSR A", "", "JMP $%.4X", "EOR $%.4X", "LSR $%.4X", "", "BVC $%.2X", "EOR ($%.2X),Y", "", "", "", "EOR ($%.4X,X)", "LSR ($%.4X,X)", "", "CLI", "EOR $%.4X, Y", "", "", "", "EOR $%.4X,X", "LSR $%.4X,X", "", "RTS", "ADC (X, $%.2X)", "", "", "", "ADC ($%.2X)", "ROR ($%.2X)", "", "PLA", "ADC #$%.2X", "ROR A", "", "JMP ($%.2X)", "ADC $%.4X", "ROR $%.4X", "", "BVS $%.2X", "ADC ($%.2X),Y", "", "", "", "ADC ($%.4X,X)", "ROR ($%.4X,X)", "", "SEI", "ADC $%.4X, Y", "", "", "", "ADC $%.4X,X", "ROR $%.4X,X", "", "", "STA (X, $%.2X)", "", "", "STY ($%.2X)", "STA ($%.2X)", "STX ($%.2X)", "", "DEY", "", "TXA", "", "STY $%.4X", "STA $%.4X", "STX $%.4X", "", "BCC $%.2X", "STA ($%.2X),Y", "", "", "STY ($%.4X,X)", "STA ($%.4X,X)", "STX ($%.4X,Y)", "", "TYA", "STA $%.4X, Y", "TXS", "", "", "STA $%.4X,X", "", "", "LDY #$%.2X", "LDA (X, $%.2X)", "LDX #$%.2X", "", "LDY ($%.2X)", "LDA ($%.2X)", "LDX ($%.2X)", "", "TAY", "LDA #$%.2X", "TAX", "", "LDY $%.4X", "LDA $%.4X", "LDX $%.4X", "", "BCS $%.2X", "LDA ($%.2X),Y", "", "", "LDY ($%.4X,X)", "LDA ($%.4X,X)", "LDX ($%.4X,Y)", "", "CLV", "LDA $%.4X, Y", "TSX", "", "LDY $%.4X,X", "LDA $%.4X,X", "LDX $%.4X, Y", "", "CPY #$%.2X", "CMP (X, $%.2X)", "", "", "CPY ($%.2X)", "CMP ($%.2X)", "DEC ($%.2X)", "", "INY", "CMP #$%.2X", "DEX", "", "CPY $%.4X", "CMP $%.4X", "DEC $%.4X", "", "BNE $%.2X", "CMP ($%.2X),Y", "", "", "", "CMP ($%.4X,X)", "DEC ($%.4X,X)", "", "CLD", "CMP $%.4X, Y", "", "", "", "CMP $%.4X,X", "DEC $%.4X,X", "", "CPX #$%.2X", "SBC (X, $%.2X)", "", "", "CPX ($%.2X)", "SBC ($%.2X)", "INC ($%.2X)", "", "INX", "SBC #$%.2X", "NOP", "", "CPX $%.4X", "SBC $%.4X", "INC $%.4X", "", "BEQ $%.2X", "SBC ($%.2X),Y", "", "", "", "SBC ($%.4X,X)", "INC ($%.4X,X)", "", "SED", "SBC $%.4X, Y", "", "", "", "SBC $%.4X,X", "INC $%.4X,X", ""
+    "BRK","ORA (X, $%.2X)","","","","ORA $%.2X","ASL $%.2X","","PHP","ORA #$%.2X","ASL A","","","ORA $%.4X","ASL $%.4X","","BPL $%.2X","ORA ($%.2X),Y","","","","ORA $%.2X,X","ASL $%.2X,X","","CLC","ORA $%.4X, Y","","","","ORA $%.4X,X","ASL $%.4X,X","","JSR $%.4X","AND (X, $%.2X)","","","BIT $%.2X","AND $%.2X","ROL $%.2X","","PLP","AND #$%.2X","ROL A","","BIT $%.4X","AND $%.4X","ROL $%.4X","","BMI $%.2X","AND ($%.2X),Y","","","","AND $%.2X,X","ROL $%.2X,X","","SEC","AND $%.4X, Y","","","","AND $%.4X,X","ROL $%.4X,X","","RTI","EOR (X, $%.2X)","","","","EOR $%.2X","LSR $%.2X","","PHA","EOR #$%.2X","LSR A","","JMP $%.4X","EOR $%.4X","LSR $%.4X","","BVC $%.2X","EOR ($%.2X),Y","","","","EOR $%.2X,X","LSR $%.2X,X","","CLI","EOR $%.4X, Y","","","","EOR $%.4X,X","LSR $%.4X,X","","RTS","ADC (X, $%.2X)","","","","ADC $%.2X","ROR $%.2X","","PLA","ADC #$%.2X","ROR A","","JMP ($%.2X)","ADC $%.4X","ROR $%.4X","","BVS $%.2X","ADC ($%.2X),Y","","","","ADC $%.2X,X","ROR $%.2X,X","","SEI","ADC $%.4X, Y","","","","ADC $%.4X,X","ROR $%.4X,X","","","STA (X, $%.2X)","","","STY $%.2X","STA $%.2X","STX $%.2X","","DEY","","TXA","","STY $%.4X","STA $%.4X","STX $%.4X","","BCC $%.2X","STA ($%.2X),Y","","","STY $%.2X,X","STA $%.2X,X","STX $%.2X,Y","","TYA","STA $%.4X, Y","TXS","","","STA $%.4X,X","","","LDY #$%.2X","LDA (X, $%.2X)","LDX #$%.2X","","LDY $%.2X","LDA $%.2X","LDX $%.2X","","TAY","LDA #$%.2X","TAX","","LDY $%.4X","LDA $%.4X","LDX $%.4X","","BCS $%.2X","LDA ($%.2X),Y","","","LDY $%.2X,X","LDA $%.2X,X","LDX $%.2X,Y","","CLV","LDA $%.4X, Y","TSX","","LDY $%.4X,X","LDA $%.4X,X","LDX $%.4X, Y","","CPY #$%.2X","CMP (X, $%.2X)","","","CPY $%.2X","CMP $%.2X","DEC $%.2X","","INY","CMP #$%.2X","DEX","","CPY $%.4X","CMP $%.4X","DEC $%.4X","","BNE $%.2X","CMP ($%.2X),Y","","","","CMP $%.2X,X","DEC $%.2X,X","","CLD","CMP $%.4X, Y","","","","CMP $%.4X,X","DEC $%.4X,X","","CPX #$%.2X","SBC (X, $%.2X)","","","CPX $%.2X","SBC $%.2X","INC $%.2X","","INX","SBC #$%.2X","NOP","","CPX $%.4X","SBC $%.4X","INC $%.4X","","BEQ $%.2X","SBC ($%.2X),Y","","","","SBC $%.2X,X","INC $%.2X,X","","SED","SBC $%.4X, Y","","","","SBC $%.4X,X","INC $%.4X,X",""
   };
 }

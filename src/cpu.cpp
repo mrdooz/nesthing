@@ -127,7 +127,7 @@ void Cpu6502::WriteMemory(u16 addr, u8 value)
     case 0x4014:
       // Enter DMA mode (writes 256 bytes to 0x2004, 2 bytes per cycle)
       // and write the first byte
-      m_dmaReadAddr = (u16)0x100u * (u16)value;
+      m_dmaReadAddr = (u16)(0x100u * value);
       m_dmaBytesLeft = 256;
       // HACK: write to 2003 to reset the ppu sprite offset
        _ppu->WriteMemory(0x2003, 0);
@@ -181,7 +181,8 @@ u8 Cpu6502::ReadMemory(u16 addr)
     }
   }
 
-  return _memory[addr];
+  u16 maskedAddr = addr & (u16)0x7ff;
+  return _memory[maskedAddr];
 }
 
 

@@ -85,18 +85,19 @@ Reset_Routine  SUBROUTINE
 
 ;----------------------------------------------------------
 
-.WaitV01   lda $2002
+.WaitV01   
+   lda $2002
    bpl .WaitV01     	;Wait for vertical blanking interval
    ldx #$00
    stx $2000
    stx PPU2000
    stx $2001			;Screen display off, amongst other things
-   dex
+   dex               ; x = 0xff
    txs					;Top of stack at $1FF
 
-;Clear (most of) the NES' WRAM.
-   ldy #$07				;To clear 8 x $100 bytes, from $0000 to $07FF.
-   sty $01				;Store count value in $01
+; clear 0x7ff down to 0x000. 0x700 is stored in zero page
+   ldy #$07
+   sty $01
    ldy #$00
    sty $00
    lda #$00

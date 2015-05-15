@@ -12,7 +12,7 @@ extern u32 g_nesPixels[256*240];
 
 u32 ColorToU32(const nes::Color& col)
 {
-  return (col.a << 24) + (col.r << 16) + (col.g << 8) + (col.b);
+  return ((u32)col.a << 24) + ((u32)col.r << 16) + ((u32)col.g << 8) + (u32)(col.b);
 }
 
 // PPU memory map
@@ -153,14 +153,13 @@ void PPU::Tick()
             u16 pal = oam.palette;
             col = (pal << 2) + (((hiByte >> xOfs) & 1) << 1) + ((loByte >> xOfs) & 1);
             col = _memory[0x3f10 + col];
-
           }
         }
 
         if (_curScanline >= 0)
         {
-          g_nesPixels[_curScanline * 256 + _scanlineTick] = ColorToU32(
-            nes::Color(g_NesPalette[col*3+2], g_NesPalette[col*3+1], g_NesPalette[col*3+0], 0xff));
+          nes::Color cc(g_NesPalette[col*3+2], g_NesPalette[col*3+1], g_NesPalette[col*3+0]);
+          g_nesPixels[_curScanline * 256 + _scanlineTick] = ColorToU32(cc);
         }
       }
     }
@@ -310,7 +309,7 @@ u8 PPU::ReadMemory(u16 addr)
     // Reset hi/lo latch
     _hiLoLatch = true;
 
-    // Reset vblank bit
+    // Reading from 0x2002 resets the vblank flag
     u8 tmp = _status.reg;
     _status.vblank = 0;
     return tmp;

@@ -45,6 +45,7 @@ namespace nes
   Cpu6502 g_cpu(&g_ppu, &g_mmc1);
 }
 
+
 #ifdef _WIN32
 u64 NowNanoseconds()
 {
@@ -82,23 +83,48 @@ void updateTexture(GLuint& texture, const char* buf, int w, int h)
   if (texture != 0)
   {
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_BYTE, buf);
   }
   else
   {
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, 4, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+    glTexImage2D(GL_TEXTURE_2D, 0, 4, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, buf);
   }
 
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 }
 
+void DrawMemory(u16 addr, u16 len)
+{
+  ImGui::Begin("Memory");
+
+  u8* mem = &g_cpu._memory[addr];
+  u16 endAddr = addr + len;
+  while (addr < endAddr)
+  {
+    ImGui::Text("%.4X  %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X",
+        addr,
+        mem[0x0], mem[0x1], mem[0x2], mem[0x3], mem[0x4], mem[0x5], mem[0x6], mem[0x7],
+        mem[0x8], mem[0x9], mem[0xa], mem[0xb], mem[0xc], mem[0xd], mem[0xe], mem[0xf]);
+
+    mem += 16;
+    addr += 16;
+  }
+
+  ImGui::End();
+}
+
 void DrawDebugger()
 {
   ImGui::Begin("Debugger");
-  ImGui::Text("IP: 0x%.4x", g_cpu._regs.ip);
+  ImGui::Text("IP:0x%.4X  SP:0x%.2X  A:0x%.2X  X:0x%.2X  Y:0x%.2X",
+      g_cpu._regs.ip, g_cpu._regs.s, g_cpu._regs.a, g_cpu._regs.x, g_cpu._regs.y);
+
+  ImGui::Text("C:%d  Z:%d  I:%d  V:%d  S:%d",
+      g_cpu._flags.c, g_cpu._flags.z, g_cpu._flags.i, g_cpu._flags.v, g_cpu._flags.s);
+  ImGui::Separator();
   ImGui::Columns(2);
   ImGui::SetColumnOffset(1, 150);
 
@@ -111,11 +137,9 @@ void DrawDebugger()
 
     switch (len)
     {
-      case 1: ImGui::Text("%.4x    %.2x", ip, op); break;
-      case 2: ImGui::Text("%.4x    %.2x %.2x", ip, op, mem[ip+1]); break;
-      case 3: ImGui::Text("%.4x    %.2x %.2x %.2x", ip, op, mem[ip+1], mem[ip+2]); break;
-      case 4: ImGui::Text("%.4x    %.2x %.2x %.2x %.2x", ip, op, mem[ip+1], mem[ip+2], mem[ip+3]); break;
-      case 5: ImGui::Text("%.4x    %.2x %.2x %.2x %.2x %.2x", ip, op, mem[ip+1], mem[ip+2], mem[ip+3], mem[ip+4]); break;
+      case 1: ImGui::Text("%.4X    %.2X", ip, op); break;
+      case 2: ImGui::Text("%.4X    %.2X %.2X", ip, op, mem[ip+1]); break;
+      case 3: ImGui::Text("%.4X    %.2X %.2X %.2X", ip, op, mem[ip+1], mem[ip+2]); break;
     }
 
     ip += len;
@@ -127,6 +151,11 @@ void DrawDebugger()
   {
     u8 op = mem[ip];
     u8 addressingMode = g_addressingModes[op];
+    u32 len = g_instrLength[op];
+
+    u8 imm8 = mem[ip+1];
+    u16 imm16 = mem[ip+1] + (mem[ip+2] << 8);
+
     switch (addressingMode)
     {
       case IMPLIED: case ACC:
@@ -134,22 +163,21 @@ void DrawDebugger()
         break;
 
       case ABS: case ABS_X: case ABS_Y:
-        ImGui::Text(g_formatStrings[op], mem[ip + 1] + (mem[ip + 2] << 8));
+        ImGui::Text(g_formatStrings[op], imm16);
         break;
 
       case IMM: case ZPG: case ZPG_X: case ZPG_Y: case REL: case IND: case X_IND: case IND_Y:
         if (g_branchingOpCodes[op] == 1)
           // relative
-          ImGui::Text(g_formatStrings[op], ip + mem[ip + 1]);
+          ImGui::Text(g_formatStrings[op], ip + len + (s8)imm8);
         else if (g_branchingOpCodes[op] == 2)
           // absolute
-          ImGui::Text(g_formatStrings[op], mem[ip + 1]);
+          ImGui::Text(g_formatStrings[op], imm16);
         else
-          ImGui::Text(g_formatStrings[op], mem[ip + 1]);
+          ImGui::Text(g_formatStrings[op], imm8);
 
         break;
     }
-    u32 len = g_instrLength[op];
 
     ip += len;
   }
@@ -173,6 +201,7 @@ int main(int argc, char** argv)
   ImVec4 clearColor = ImColor(114, 144, 154);
 
   Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
+//  Status status = LoadINes("/Users/dooz/Dropbox/nes/MarioBros.nes", &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
 //    printf("error loading rom: %s\n", argv[1]);
@@ -198,15 +227,15 @@ int main(int argc, char** argv)
   double cpuAcc_ns = 0;
   double mcAcc_ns = 0;
   double screenAcc_ns = 0;
-  
-  double elapsedTime_ns = 0;
-  
+
   u64 lastTick_ns = NowNanoseconds();
   u64 totalTicks = 0;
   u64 mcTicks = 0;
   u64 cpuTicks = 0;
   u64 ppuTicks = 0;
-  
+
+  u64 elapsedTime_ns = 0;
+
   // cpu cylces until the currently running instruction is done
   u32 cpuDelay = 0;
   RollingAverage<double> avgTick(1000);
@@ -218,10 +247,6 @@ int main(int argc, char** argv)
   bool paused = true;
   bool singleStep = false;
 
-  bool prevKeysDown[512];
-  memset(prevKeysDown, 0, 512);
-
-#define KEY_UP(k) prevKeysDown[k] && !io.KeysDown[k]
   // Main loop
   while (!glfwWindowShouldClose(window))
   {
@@ -229,13 +254,11 @@ int main(int argc, char** argv)
     ImGui_ImplGlfw_NewFrame();
     
     ImGuiIO& io = ImGui::GetIO();
-    if (KEY_UP('W')) g_cpu.SetInput(Button::Up, 0);
-    if (KEY_UP('S')) g_cpu.SetInput(Button::Down, 0);
-    if (KEY_UP('R')) g_cpu.SetInput(Button::Start, 0);
-    if (KEY_UP('P')) paused = !paused;
-    if (KEY_UP('O')) { singleStep = true; paused = false; }
-
-    memcpy(prevKeysDown, io.KeysDown, 512);
+    if (g_KeyUpTrigger.IsTriggered('W')) g_cpu.SetInput(Button::Up, 0);
+    if (g_KeyUpTrigger.IsTriggered('S')) g_cpu.SetInput(Button::Down, 0);
+    if (g_KeyUpTrigger.IsTriggered('R')) g_cpu.SetInput(Button::Start, 0);
+    if (g_KeyUpTrigger.IsTriggered('P')) paused = !paused;
+    if (g_KeyUpTrigger.IsTriggered('O')) singleStep = true;
 
     u64 now_ns = NowNanoseconds();
     double delta_ns = (double)(now_ns - lastTick_ns);
@@ -243,7 +266,26 @@ int main(int argc, char** argv)
     avgTick.AddSample(delta_ns);
     screenAcc_ns += delta_ns;
 
-    if (!paused)
+    if (paused)
+    {
+      if (singleStep)
+      {
+        if (g_ppu.TriggerNmi())
+        {
+          updateTexture(textureId, (const char*)g_nesPixels, 256, 240);
+          g_cpu.ExecuteNmi();
+        }
+
+        g_cpu.Tick();
+
+        g_ppu.Tick();
+        g_ppu.Tick();
+        g_ppu.Tick();
+
+        singleStep = false;
+      }
+    }
+    else
     {
       elapsedTime_ns += delta_ns;
       mcAcc_ns += delta_ns;
@@ -274,14 +316,7 @@ int main(int argc, char** argv)
           --cpuDelay;
 
         if (cpuDelay == 0)
-        {
           cpuDelay = g_cpu.Tick();
-          if (singleStep)
-          {
-            singleStep = false;
-            paused = true;
-          }
-        }
       }
 
       while (mcAcc_ns > mcPeriod_ns)
@@ -292,18 +327,20 @@ int main(int argc, char** argv)
 
       ++totalTicks;
     }
-    
+
+
     if (screenAcc_ns > screenPeriod_ns)
     {
       ImGui::Begin("Console output");
       ImGui::Image((ImTextureID)textureId, ImVec2(256, 256));
-      double elapsed = (now_ns - start_ns) / 1e9;
+      double elapsed = max(1.0, elapsedTime_ns / 1e9);
       ImGui::Text("CPU speed: %.2f hz", cpuTicks / elapsed);
       ImGui::Text("PPU speed: %.2f hz", ppuTicks / elapsed);
       ImGui::Text("MC speed: %.2f hz", mcTicks / elapsed);
       ImGui::End();
 
       DrawDebugger();
+      DrawMemory(0x0000, 0x800);
 
       // Rendering
       glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);

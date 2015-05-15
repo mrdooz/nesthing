@@ -12,7 +12,7 @@ namespace nes
 
   struct Color
   {
-    Color(u8 r, u8 g, u8 b, u8 a = 1) : r(r), g(g), b(b), a(a) {}
+    Color(u8 r, u8 g, u8 b, u8 a = 0xff) : r(r), g(g), b(b), a(a) {}
     u8 r, g, b, a;
   };
   /*

@@ -18,3 +18,27 @@ void        ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, i
 void        ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void        ImGui_ImplGlFw_KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void        ImGui_ImplGlfw_CharCallback(GLFWwindow* window, unsigned int c);
+
+struct KeyUpTrigger
+{
+  KeyUpTrigger()
+  {
+    memset(triggers, 0, 512);
+  }
+
+  bool IsTriggered(int key)
+  {
+    bool tmp = triggers[key];
+    triggers[key] = false;
+    return tmp;
+  }
+
+  void SetTrigger(int key)
+  {
+    triggers[key] = true;
+  }
+
+  bool triggers[512];
+};
+
+extern KeyUpTrigger g_KeyUpTrigger;

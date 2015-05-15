@@ -100,7 +100,7 @@ namespace nes
     u16 _backgroundTableAddr;
     u16 _spriteTableAddr;
     u16 _nameTableAddr;
-    u8 _numSprites;
+    u8 _numSprites = 0;
 
     s16 _curScanline;
     u16 _scanlineTick;

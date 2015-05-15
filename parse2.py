@@ -38,9 +38,9 @@ format_str = {
     'X,ind' : '(X, $%.2X)',
     'ind,Y' : '($%.2X),Y',
     'rel': '$%.2X',
-    'zpg': '($%.2X)',
-    'zpg,X' : '($%.4X,X)',
-    'zpg,Y' : '($%.4X,Y)',
+    'zpg': '$%.2X',
+    'zpg,X' : '$%.2X,X',
+    'zpg,Y' : '$%.2X,Y',
 }
 
 opcode_desc = {
