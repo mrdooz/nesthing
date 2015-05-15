@@ -45,7 +45,6 @@ namespace nes
   Cpu6502 g_cpu(&g_ppu, &g_mmc1);
 }
 
-
 #ifdef _WIN32
 u64 NowNanoseconds()
 {
@@ -73,6 +72,14 @@ u64 NowNanoseconds()
 
 u32 g_nesPixels[256*240];
 
+enum BreakpointFlags
+{
+  BP_NORMAL   =   1 << 0,
+  BP_HIDDEN   =   1 << 1,
+};
+
+u8 g_breakPoints[64*1024];
+
 static void error_callback(int error, const char* description)
 {
   fprintf(stderr, "Error %d: %s\n", error, description);
@@ -83,13 +90,21 @@ void updateTexture(GLuint& texture, const char* buf, int w, int h)
   if (texture != 0)
   {
     glBindTexture(GL_TEXTURE_2D, texture);
+#ifdef _WIN32
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+#else
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_BGRA, GL_UNSIGNED_BYTE, buf);
+#endif
   }
   else
   {
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
+#ifdef _WIN32
+    glTexImage2D(GL_TEXTURE_2D, 0, 4, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+#else
     glTexImage2D(GL_TEXTURE_2D, 0, 4, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, buf);
+#endif
   }
 
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
@@ -135,11 +150,13 @@ void DrawDebugger()
     u8 op = mem[ip];
     u32 len = g_instrLength[op];
 
+    ImVec4 col = g_breakPoints[ip] ? ImVec4(1, 1, 0, 1) : ImVec4(1, 1, 1, 1);
+    
     switch (len)
     {
-      case 1: ImGui::Text("%.4X    %.2X", ip, op); break;
-      case 2: ImGui::Text("%.4X    %.2X %.2X", ip, op, mem[ip+1]); break;
-      case 3: ImGui::Text("%.4X    %.2X %.2X %.2X", ip, op, mem[ip+1], mem[ip+2]); break;
+      case 1: ImGui::TextColored(col, "%.4X    %.2X", ip, op); break;
+      case 2: ImGui::TextColored(col, "%.4X    %.2X %.2X", ip, op, mem[ip + 1]); break;
+      case 3: ImGui::TextColored(col, "%.4X    %.2X %.2X %.2X", ip, op, mem[ip + 1], mem[ip + 2]); break;
     }
 
     ip += len;
@@ -227,6 +244,7 @@ int main(int argc, char** argv)
   double cpuAcc_ns = 0;
   double mcAcc_ns = 0;
   double screenAcc_ns = 0;
+  double elapsedTime_ns = 0;
 
   u64 lastTick_ns = NowNanoseconds();
   u64 totalTicks = 0;
@@ -234,7 +252,6 @@ int main(int argc, char** argv)
   u64 cpuTicks = 0;
   u64 ppuTicks = 0;
 
-  u64 elapsedTime_ns = 0;
 
   // cpu cylces until the currently running instruction is done
   u32 cpuDelay = 0;
@@ -246,6 +263,9 @@ int main(int argc, char** argv)
 
   bool paused = true;
   bool singleStep = false;
+  bool stepOver = false;
+
+  g_breakPoints[0x8040] = BP_NORMAL;
 
   // Main loop
   while (!glfwWindowShouldClose(window))
@@ -259,6 +279,12 @@ int main(int argc, char** argv)
     if (g_KeyUpTrigger.IsTriggered('R')) g_cpu.SetInput(Button::Start, 0);
     if (g_KeyUpTrigger.IsTriggered('P')) paused = !paused;
     if (g_KeyUpTrigger.IsTriggered('O')) singleStep = true;
+
+    if (g_KeyUpTrigger.IsTriggered('I'))
+    {
+      // handle "step over" by inserting a hidden breakpoint at the next instruction
+      OpCode op = g_cpu.PeekOp();
+    }
 
     u64 now_ns = NowNanoseconds();
     double delta_ns = (double)(now_ns - lastTick_ns);
@@ -317,6 +343,13 @@ int main(int argc, char** argv)
 
         if (cpuDelay == 0)
           cpuDelay = g_cpu.Tick();
+
+        if (g_breakPoints[g_cpu._regs.ip] >= 1)
+        {
+          paused = true;
+          break;
+        }
+
       }
 
       while (mcAcc_ns > mcPeriod_ns)
@@ -327,7 +360,6 @@ int main(int argc, char** argv)
 
       ++totalTicks;
     }
-
 
     if (screenAcc_ns > screenPeriod_ns)
     {

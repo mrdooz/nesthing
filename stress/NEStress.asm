@@ -4341,23 +4341,28 @@ ScrOnWaitKey SUBROUTINE
 ;*****************************************************
 
 WipePPU SUBROUTINE
-   lda   #$20
+; ppu has 2k ram
+   lda   #$20     ; ppu write. first msb, then lsb. $2000 here = nametable 0
    sta   $2006
    lda   #$00
-   sta   $2006
+   sta   $2006 
 
+   ; clear 4k
    ldx   #$00
    ldy   #$10
-.ClearPPU sta $2007
+.ClearPPU 
+   sta   $2007
    dex
    bne   .ClearPPU
    dey
    bne   .ClearPPU
 
+   ; clear OAM (256 bytes)
    lda   #$00
    sta   $2003
    tay
-.ClearSpr sta   $2004
+.ClearSpr 
+   sta   $2004
    dey
    bne   .ClearSpr
    rts
@@ -4365,9 +4370,11 @@ WipePPU SUBROUTINE
 ;--------------------------------
 ClearSPRRAM SUBROUTINE		; Needs fill value in A
 
+   ; Fill OAM with data from $700
    ldx   #$08
    stx   $2003
-.ClearSPRRAM   sta   $0700,X        ;$700 FOR NOW!!!!
+.ClearSPRRAM   
+   sta   $0700,X
    sta   $2004
    inx
    bne   .ClearSPRRAM
