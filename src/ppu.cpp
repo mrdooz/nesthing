@@ -103,7 +103,7 @@ void PPU::Tick()
       // 2) fetch attribute table byte
       // 3) 2 x fetch pattern table byte
 
-      if (_curScanline >= 0 && _scanlineTick <= 256)
+      if (_curScanline >= 0 && _scanlineTick < 256)
       {
         u16 x = _scanlineTick;
         u16 y = _curScanline;
@@ -140,8 +140,9 @@ void PPU::Tick()
         for (u32 s = 0; s < _numSprites; ++s)
         {
           const OamEntry& oam = _secondaryOam[s];
-          s32 yOfs = y - oam.vpos;
-          s32 xOfs = (s32)x - (s32)oam.hpos;
+          // todo: why can this go negative?
+          s32 yOfs = max(0, y - oam.vpos);
+          s32 xOfs = max(0, (s32)x - (s32)oam.hpos);
           if (xOfs >= 0 && xOfs < 8)
           {
             u16 tileBank = oam.tile & 1;
@@ -192,7 +193,8 @@ void PPU::Tick()
   {
     // check for visible sprites
     _numSprites = 0;
-    for (u32 i = 0; i < 64 && _numSprites <= 8; ++i)
+    // TODO: lowered max to 8
+    for (u32 i = 0; i < 64 && _numSprites < 8; ++i)
     {
       s16 nextScanLine = _curScanline + 1;
       s16 cand = _oam[i].vpos;
@@ -283,14 +285,19 @@ void PPU::WriteMemory(u16 addr, u8 value)
     // Video RAM register 2 (PPUADDR)
     if (_hiLoLatch)
     {
+      // set the upper 8 bits
+      _writeAddr &= 0xffff;
       _writeAddr |= (u16)(value & 0x3f) << 8;
       _readAddr = _writeAddr;
     }
     else
     {
+      _writeAddr &= 0xffff0000;
       _writeAddr |= value;
       _readAddr = _writeAddr;
     }
+
+    printf("write addr: %.4x (%.2x)\n", _writeAddr, value);
 
     _hiLoLatch = !_hiLoLatch;
     break;
@@ -302,6 +309,8 @@ void PPU::WriteMemory(u16 addr, u8 value)
     {
       _memory[_writeAddr] = value;
       _writeAddr += _control1.ppuAddressIncr ? 32 : 1;
+      printf("%.2x  ", value);
+
     }
     break;
   }

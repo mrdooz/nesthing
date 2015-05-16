@@ -303,9 +303,10 @@ int main(int argc, char** argv)
   bool paused = true;
   bool singleStep = false;
   bool stepOver = false;
+  bool slowMode = false;
 
   // 0x8135 = jmp to title start
-  g_breakPoints[0x805b] = BP_NORMAL;
+  //g_breakPoints[0x805b] = BP_NORMAL;
 
   // Main loop
   while (!glfwWindowShouldClose(window))
@@ -319,6 +320,7 @@ int main(int argc, char** argv)
     if (g_KeyUpTrigger.IsTriggered('R')) g_cpu.SetInput(Button::Start, 0);
     if (g_KeyUpTrigger.IsTriggered('P')) paused = !paused;
     if (g_KeyUpTrigger.IsTriggered('O')) singleStep = true;
+    if (g_KeyUpTrigger.IsTriggered('L')) slowMode = !slowMode;
 
     u64 now_ns = NowNanoseconds();
     double delta_ns = (double)(now_ns - lastTick_ns);
@@ -339,7 +341,7 @@ int main(int argc, char** argv)
         }
       }
 
-      if (singleStep)
+      if (singleStep || slowMode)
       {
         if (g_ppu.TriggerNmi())
         {
@@ -347,13 +349,25 @@ int main(int argc, char** argv)
           g_cpu.ExecuteNmi();
         }
 
-        g_cpu.Tick();
+        if (cpuDelay > 0)
+          --cpuDelay;
+
+        if (cpuDelay == 0)
+          cpuDelay = g_cpu.Tick();
 
         g_ppu.Tick();
         g_ppu.Tick();
         g_ppu.Tick();
 
         singleStep = false;
+
+        u16 ip = g_cpu._regs.ip;
+        if (g_breakPoints[ip])
+        {
+          // if this breakpoint was hidden, remove it
+          g_branchingOpCodes[ip] &= ~BP_HIDDEN;
+          slowMode = false;
+        }
       }
     }
     else
