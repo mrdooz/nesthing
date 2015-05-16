@@ -8,7 +8,7 @@
 
 using namespace nes;
 
-extern u32 g_nesPixels[256*240];
+extern vector<u32> g_nesPixels;
 
 u32 ColorToU32(const nes::Color& col)
 {
@@ -74,6 +74,12 @@ void PPU::Tick()
   //          | 20 scanlines long
   //  y=260___|____________________|__________|
   //
+
+  if (!_hiLoLatch)
+  {
+    int a = 10;
+  }
+
 
   // process current scan line
   if (_curScanline < 240)
@@ -269,15 +275,15 @@ void PPU::WriteMemory(u16 addr, u8 value)
     {
       _vscroll = value;
     }
-    _hiLoLatch = !_hiLoLatch;
 
+    _hiLoLatch = !_hiLoLatch;
     break;
 
   case 0x2006:
     // Video RAM register 2 (PPUADDR)
     if (_hiLoLatch)
     {
-      _writeAddr = (u16)value << 8;
+      _writeAddr |= (u16)(value & 0x3f) << 8;
       _readAddr = _writeAddr;
     }
     else
@@ -285,6 +291,7 @@ void PPU::WriteMemory(u16 addr, u8 value)
       _writeAddr |= value;
       _readAddr = _writeAddr;
     }
+
     _hiLoLatch = !_hiLoLatch;
     break;
 

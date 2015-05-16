@@ -70,7 +70,9 @@ u64 NowNanoseconds()
 }
 #endif
 
-u32 g_nesPixels[256*240];
+vector<u32> g_nesPixels(256*240);
+GLuint textureId = 0;
+GLuint nameTable0 = 0;
 
 enum BreakpointFlags
 {
@@ -83,6 +85,24 @@ u8 g_breakPoints[64*1024];
 static void error_callback(int error, const char* description)
 {
   fprintf(stderr, "Error %d: %s\n", error, description);
+}
+
+void updateMonoTexture(GLuint& texture, const char* buf, int w, int h)
+{
+  if (texture != 0)
+  {
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_R, GL_UNSIGNED_BYTE, buf);
+  }
+  else
+  {
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, 1, w, h, 0, GL_R, GL_UNSIGNED_BYTE, buf);
+  }
+
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
 }
 
 void updateTexture(GLuint& texture, const char* buf, int w, int h)
@@ -109,6 +129,26 @@ void updateTexture(GLuint& texture, const char* buf, int w, int h)
 
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+}
+
+void DrawPPU()
+{
+  static GLuint nameTables[4] = { 0, 0, 0, 0 };
+
+  for (int i = 0; i < 4; ++i)
+  {
+    updateMonoTexture(nameTables[i], (const char*)&g_ppu._memory[0x2000+i*0x400], 64, 16);
+  }
+
+  ImGui::Begin("PPU");
+
+  ImGui::Image((ImTextureID)nameTables[0], ImVec2(64, 16));
+  ImGui::Image((ImTextureID)nameTables[1], ImVec2(64, 16));
+  ImGui::Image((ImTextureID)nameTables[2], ImVec2(64, 16));
+  ImGui::Image((ImTextureID)nameTables[3], ImVec2(64, 16));
+
+  ImGui::End();
+
 }
 
 void DrawMemory(u16 addr, u16 len)
@@ -150,7 +190,7 @@ void DrawDebugger()
     u8 op = mem[ip];
     u32 len = g_instrLength[op];
 
-    ImVec4 col = g_breakPoints[ip] ? ImVec4(1, 1, 0, 1) : ImVec4(1, 1, 1, 1);
+    ImVec4 col = (g_breakPoints[ip] & BP_NORMAL) ? ImVec4(1, 1, 0, 1) : ImVec4(1, 1, 1, 1);
     
     switch (len)
     {
@@ -257,15 +297,15 @@ int main(int argc, char** argv)
   u32 cpuDelay = 0;
   RollingAverage<double> avgTick(1000);
   
-  GLuint textureId = 0;
-  
+
   u64 start_ns = NowNanoseconds();
 
   bool paused = true;
   bool singleStep = false;
   bool stepOver = false;
 
-  g_breakPoints[0x8040] = BP_NORMAL;
+  // 0x8135 = jmp to title start
+  g_breakPoints[0x805b] = BP_NORMAL;
 
   // Main loop
   while (!glfwWindowShouldClose(window))
@@ -280,12 +320,6 @@ int main(int argc, char** argv)
     if (g_KeyUpTrigger.IsTriggered('P')) paused = !paused;
     if (g_KeyUpTrigger.IsTriggered('O')) singleStep = true;
 
-    if (g_KeyUpTrigger.IsTriggered('I'))
-    {
-      // handle "step over" by inserting a hidden breakpoint at the next instruction
-      OpCode op = g_cpu.PeekOp();
-    }
-
     u64 now_ns = NowNanoseconds();
     double delta_ns = (double)(now_ns - lastTick_ns);
     lastTick_ns = now_ns;
@@ -294,11 +328,22 @@ int main(int argc, char** argv)
 
     if (paused)
     {
+      if (g_KeyUpTrigger.IsTriggered('I'))
+      {
+        // handle "step over" by inserting a hidden breakpoint at the next instruction
+        u16 ip = g_cpu._regs.ip;
+        if (g_cpu._memory[ip] == OpCode::JSR_ABS)
+        {
+          g_breakPoints[ip+3] |= BP_HIDDEN;
+          paused = false;
+        }
+      }
+
       if (singleStep)
       {
         if (g_ppu.TriggerNmi())
         {
-          updateTexture(textureId, (const char*)g_nesPixels, 256, 240);
+          updateTexture(textureId, (const char*)g_nesPixels.data(), 256, 240);
           g_cpu.ExecuteNmi();
         }
 
@@ -327,7 +372,7 @@ int main(int argc, char** argv)
 
         if (g_ppu.TriggerNmi())
         {
-          updateTexture(textureId, (const char*)g_nesPixels, 256, 240);
+          updateTexture(textureId, (const char*)g_nesPixels.data(), 256, 240);
           g_cpu.ExecuteNmi();
         }
       }
@@ -344,12 +389,14 @@ int main(int argc, char** argv)
         if (cpuDelay == 0)
           cpuDelay = g_cpu.Tick();
 
-        if (g_breakPoints[g_cpu._regs.ip] >= 1)
+        u16 ip = g_cpu._regs.ip;
+        if (g_breakPoints[ip])
         {
+          // if this breakpoint was hidden, remove it
+          g_branchingOpCodes[ip] &= ~BP_HIDDEN;
           paused = true;
           break;
         }
-
       }
 
       while (mcAcc_ns > mcPeriod_ns)
@@ -361,10 +408,10 @@ int main(int argc, char** argv)
       ++totalTicks;
     }
 
-    if (screenAcc_ns > screenPeriod_ns)
+//    if (screenAcc_ns > screenPeriod_ns)
     {
       ImGui::Begin("Console output");
-      ImGui::Image((ImTextureID)textureId, ImVec2(256, 256));
+      ImGui::Image((ImTextureID)textureId, ImVec2(256, 240));
       double elapsed = max(1.0, elapsedTime_ns / 1e9);
       ImGui::Text("CPU speed: %.2f hz", cpuTicks / elapsed);
       ImGui::Text("PPU speed: %.2f hz", ppuTicks / elapsed);
@@ -373,6 +420,7 @@ int main(int argc, char** argv)
 
       DrawDebugger();
       DrawMemory(0x0000, 0x800);
+      DrawPPU();
 
       // Rendering
       glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);

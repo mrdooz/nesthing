@@ -127,18 +127,25 @@ TITLESCROLL2  EQU   $0002
 TITLESELECT   EQU   $0003
 BUTTONDOWN    EQU   $0006
 
+   ; set pallete 0d
    lda   #$0D
    jsr   SetPalette
 
+   ; load name table 0 with the title map
    lda   #<.TitleMap
    sta   $00
    lda   #>.TitleMap
    sta   $01
-   lda   #$00              ;Screen 0
-   jsr   PrintFullScreen
+   lda   #$00
+   jsr   LoadNameTable
 
+   ; set sprite memory address (0)
    lda   #$00
    sta   $2003
+   
+   ; init $0700 - $0707 (??)
+   ; $0700: 4E 01
+   ; $0702: 00 66 
    lda   #$4E              
    sta   $0700
    lda   #$01
@@ -147,7 +154,6 @@ BUTTONDOWN    EQU   $0006
    sta   $0702
    lda   #$66
    sta   $0703
-
    lda   .TitleCursorPos
    sta   $0704
    lda   #$02
@@ -157,10 +163,12 @@ BUTTONDOWN    EQU   $0006
    lda   #$40
    sta   $0707
 
+   ; set screen scroll offsets (vert + horiz)
    lda   #$00
    sta   $2005
    sta   $2005
 
+   ; init vars to 0
    sta   TITLESCROLL
    sta   TITLESCROLL1
    sta   TITLESCROLL2
@@ -172,9 +180,11 @@ BUTTONDOWN    EQU   $0006
 
 
 ;Enable vblank interrupts, etc.
+   ; vblank, sprite pattern table 1 ($1000)
    lda   #%10001000
    sta   $2000
-   lda   #%00011110        ;Screen on, sprites on, show leftmost 8 pixels, colour
+   ; Screen on, sprites on, show leftmost 8 pixels, colour
+   lda   #%00011110
    sta   $2001
 
 .TitleLoop
@@ -193,8 +203,6 @@ BUTTONDOWN    EQU   $0006
    lda   #$00
    sta   VBPASS
    ldx   TITLESCROLL
-
-
 
 
 .TitleLoop1
@@ -4384,11 +4392,12 @@ ClearSPRRAM SUBROUTINE		; Needs fill value in A
 
 
 
-PrintFullScreen SUBROUTINE
+LoadNameTable SUBROUTINE
 ;--------------------------------------------------
 ; Needs $00 & $01 for address of picture.
 ; Needs A for screen number (0-3).
 ;--------------------------------------------------
+   ; a = name table number (0..3)
    asl
    asl
    adc   #$20        ;Load Name and Attribute Table
@@ -4396,6 +4405,7 @@ PrintFullScreen SUBROUTINE
    lda   #$00
    sta   $2006
 
+   ; copy the name table (address stored at 00:01), $0400 bytes
    ldy   #$00
    ldx   #$04
 
@@ -4565,6 +4575,8 @@ SetPalette SUBROUTINE
 ;----------------------------------
 ; INPUT: A: PALETTE NUMBER
 ;----------------------------------
+   ; set PALETTEPTR to &Palette[A*32]
+   ; note, because there is no mul, this becomes an add loop!
    tax
    lda   #<.Palette
    sta   PALETTEPTR
@@ -4585,14 +4597,17 @@ SetPalette SUBROUTINE
    bne   .AddPalette
 
 .NoAddPalette
+   ; write to $3f00 = image palette and sprite palette
    ldx   #$3F
    stx   $2006
    ldx   #$00
    stx   $2006
 
+   ; copy the palette
    ldy   #$00
    ldx   #$20     ;Set BG & Sprite palettes.
-.InitPal lda   (PALETTEPTR),Y
+.InitPal 
+   lda   (PALETTEPTR),Y
    sta   $2007
    sta   TEMPPAL,Y               ;Store to palette copy
    iny
@@ -4692,8 +4707,11 @@ NMI_Routine SUBROUTINE
    tya
    pha
 
+   ; set the VBPASS flag 
    lda   #$01
    sta   VBPASS
+
+   ; toggle VBODD 
    lda   VBODD
    eor   #$01
    sta   VBODD
