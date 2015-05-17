@@ -1,4 +1,5 @@
 #include "ppu.hpp"
+#include "cpu.hpp"
 #include "nes_helpers.hpp"
 
 #ifdef _WIN32
@@ -8,7 +9,15 @@
 
 using namespace nes;
 
-extern vector<u32> g_nesPixels;
+namespace nes
+{
+  extern nes::Cpu6502 g_cpu;
+}
+
+
+
+extern u32 g_nesPixels[256 * 240];
+//extern vector<u32> g_nesPixels;
 
 u32 ColorToU32(const nes::Color& col)
 {
@@ -32,10 +41,10 @@ u32 ColorToU32(const nes::Color& col)
 //$3F10     $10     Sprite Palette
 //$3F20     $E0     Mirror of 3F00h-3F1Fh
 
-namespace
-{
-  size_t MEMORY_SIZE = 16 * 1024;
-}
+// namespace
+// {
+//   size_t MEMORY_SIZE = 16 * 1024;
+// }
 
 PPU::PPU()
   : _hiLoLatch(true)
@@ -45,7 +54,7 @@ PPU::PPU()
   , _evenFrame(true)
   , _hscroll(0)
   , _vscroll(0)
-  , _memory(MEMORY_SIZE)
+//  , _memory(MEMORY_SIZE)
   , _backgroundTableAddr(0)
   , _spriteTableAddr(0)
   , _nameTableAddr(0x2000)
@@ -74,12 +83,6 @@ void PPU::Tick()
   //          | 20 scanlines long
   //  y=260___|____________________|__________|
   //
-
-  if (!_hiLoLatch)
-  {
-    int a = 10;
-  }
-
 
   // process current scan line
   if (_curScanline < 240)
@@ -141,8 +144,8 @@ void PPU::Tick()
         {
           const OamEntry& oam = _secondaryOam[s];
           // todo: why can this go negative?
-          s32 yOfs = max(0, y - oam.vpos);
-          s32 xOfs = max(0, (s32)x - (s32)oam.hpos);
+          u32 yOfs = oam.vpos > y ? 0 : y - oam.vpos;
+          u32 xOfs = oam.hpos > x ? 0 : x - oam.hpos;
           if (xOfs >= 0 && xOfs < 8)
           {
             u16 tileBank = oam.tile & 1;
@@ -165,8 +168,10 @@ void PPU::Tick()
 
         if (_curScanline >= 0)
         {
-          nes::Color cc(g_NesPalette[col*3+2], g_NesPalette[col*3+1], g_NesPalette[col*3+0]);
-          g_nesPixels[_curScanline * 256 + _scanlineTick] = ColorToU32(cc);
+          u32 r = g_NesPalette[col * 3 + 0];
+          u32 g = g_NesPalette[col * 3 + 1];
+          u32 b = g_NesPalette[col * 3 + 2];
+          g_nesPixels[_curScanline * 256 + _scanlineTick] = (0xff000000) + (r << 16) + (g << 8) + b;
         }
       }
     }
@@ -286,18 +291,16 @@ void PPU::WriteMemory(u16 addr, u8 value)
     if (_hiLoLatch)
     {
       // set the upper 8 bits
-      _writeAddr &= 0xffff;
+      _writeAddr &= 0x00ff;
       _writeAddr |= (u16)(value & 0x3f) << 8;
       _readAddr = _writeAddr;
     }
     else
     {
-      _writeAddr &= 0xffff0000;
+      _writeAddr &= 0xff00;
       _writeAddr |= value;
       _readAddr = _writeAddr;
     }
-
-    printf("write addr: %.4x (%.2x)\n", _writeAddr, value);
 
     _hiLoLatch = !_hiLoLatch;
     break;
@@ -305,12 +308,10 @@ void PPU::WriteMemory(u16 addr, u8 value)
   case 0x2007:
     // Note, this should only be done during vblank or when rendering is disabled
     // Video RAM I/O register
-    if (_writeAddr < _memory.size())
+    if (_writeAddr < MEMORY_SIZE)
     {
       _memory[_writeAddr] = value;
       _writeAddr += _control1.ppuAddressIncr ? 32 : 1;
-      printf("%.2x  ", value);
-
     }
     break;
   }

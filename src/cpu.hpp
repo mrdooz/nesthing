@@ -97,7 +97,9 @@ namespace nes
 
     static_assert(sizeof(CpuFlags) == sizeof(u8), "invalid flag size");
 
-    vector<u8> _memory;
+    const static size_t MEMORY_SIZE = 64 * 1024;
+    u8 _memory[MEMORY_SIZE];
+    //vector<u8> _memory;
 
     // TODO: some kind of cartridge abstraction here that implements bank switching etc
     vector<PrgRom> _prgRom;

@@ -95,7 +95,10 @@ namespace nes
     bool _evenFrame;
     u8 _hscroll;
     u8 _vscroll;
-    vector<u8> _memory;
+
+    static const size_t MEMORY_SIZE = 16 * 1024;
+    u8 _memory[MEMORY_SIZE];
+    //vector<u8> _memory;
 
     u16 _backgroundTableAddr;
     u16 _spriteTableAddr;

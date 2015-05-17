@@ -70,7 +70,8 @@ u64 NowNanoseconds()
 }
 #endif
 
-vector<u32> g_nesPixels(256*240);
+//vector<u32> g_nesPixels(256 * 240);
+u32 g_nesPixels[256 * 240];
 GLuint textureId = 0;
 GLuint nameTable0 = 0;
 
@@ -151,21 +152,28 @@ void DrawPPU()
 
 }
 
-void DrawMemory(u16 addr, u16 len)
+void DrawMemory(const char* windowName, char* buf, size_t bufLen)
 {
-  ImGui::Begin("Memory");
+  ImGui::Begin(windowName);
+  ImGui::InputText("Address: ", buf, bufLen, ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
+
+  u32 addr;
+  sscanf(buf, "%X", &addr);
 
   u8* mem = &g_cpu._memory[addr];
-  u16 endAddr = addr + len;
+  u16 endAddr = 0xffff;
   while (addr < endAddr)
   {
     ImGui::Text("%.4X  %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X %.2X",
-        addr,
-        mem[0x0], mem[0x1], mem[0x2], mem[0x3], mem[0x4], mem[0x5], mem[0x6], mem[0x7],
-        mem[0x8], mem[0x9], mem[0xa], mem[0xb], mem[0xc], mem[0xd], mem[0xe], mem[0xf]);
+      addr,
+      mem[0x0], mem[0x1], mem[0x2], mem[0x3], mem[0x4], mem[0x5], mem[0x6], mem[0x7],
+      mem[0x8], mem[0x9], mem[0xa], mem[0xb], mem[0xc], mem[0xd], mem[0xe], mem[0xf]);
 
     mem += 16;
     addr += 16;
+
+    if (!ImGui::IsItemVisible())
+      break;
   }
 
   ImGui::End();
@@ -183,15 +191,15 @@ void DrawDebugger()
   ImGui::Columns(2);
   ImGui::SetColumnOffset(1, 150);
 
-  u8* mem = g_cpu._memory.data();
+  u8* mem = &g_cpu._memory[0];
   u16 ip = g_cpu._regs.ip;
-  for (u32 i = 0; i < 20; ++i)
+  while (true)
   {
     u8 op = mem[ip];
     u32 len = g_instrLength[op];
 
     ImVec4 col = (g_breakPoints[ip] & BP_NORMAL) ? ImVec4(1, 1, 0, 1) : ImVec4(1, 1, 1, 1);
-    
+
     switch (len)
     {
       case 1: ImGui::TextColored(col, "%.4X    %.2X", ip, op); break;
@@ -199,12 +207,16 @@ void DrawDebugger()
       case 3: ImGui::TextColored(col, "%.4X    %.2X %.2X %.2X", ip, op, mem[ip + 1], mem[ip + 2]); break;
     }
 
+    if (!ImGui::IsItemVisible())
+      break;
+
+
     ip += len;
   }
 
   ImGui::NextColumn();
   ip = g_cpu._regs.ip;
-  for (u32 i = 0; i < 20; ++i)
+  while (true)
   {
     u8 op = mem[ip];
     u8 addressingMode = g_addressingModes[op];
@@ -236,6 +248,9 @@ void DrawDebugger()
         break;
     }
 
+    if (!ImGui::IsItemVisible())
+      break;
+
     ip += len;
   }
 
@@ -258,7 +273,8 @@ int main(int argc, char** argv)
   ImVec4 clearColor = ImColor(114, 144, 154);
 
   Status status = LoadINes(argv[1], &g_cpu, &g_ppu);
-//  Status status = LoadINes("/Users/dooz/Dropbox/nes/MarioBros.nes", &g_cpu, &g_ppu);
+//  Status status = LoadINes("d:/dropbox/nes/MarioBros.nes", &g_cpu, &g_ppu);
+  //Status status = LoadINes("d:/dropbox/nes/DonkeyKongJr.nes", &g_cpu, &g_ppu);
   if (status != Status::OK)
   {
 //    printf("error loading rom: %s\n", argv[1]);
@@ -277,7 +293,7 @@ int main(int argc, char** argv)
   double ppuPeriod_ns = 1e9 / (masterClock / 4);
   double cpuPeriod_ns = 1e9 / (masterClock / 12);
 
-  double screenPeriod_ns = 1e9 / 20;
+  double screenPeriod_ns = 1e9 / 60;
   
   // keep track of accumulated time to know when to tick ppu/cpu
   double ppuAcc_ns = 0;
@@ -306,7 +322,8 @@ int main(int argc, char** argv)
   bool slowMode = false;
 
   // 0x8135 = jmp to title start
-  //g_breakPoints[0x805b] = BP_NORMAL;
+  //g_breakPoints[0x804E] = BP_NORMAL;
+  //g_breakPoints[0xAE6B] = BP_NORMAL;
 
   // Main loop
   while (!glfwWindowShouldClose(window))
@@ -334,9 +351,10 @@ int main(int argc, char** argv)
       {
         // handle "step over" by inserting a hidden breakpoint at the next instruction
         u16 ip = g_cpu._regs.ip;
-        if (g_cpu._memory[ip] == OpCode::JSR_ABS)
+        u8 op = g_cpu._memory[ip];
+        if (g_branchingOpCodes[op])
         {
-          g_breakPoints[ip+3] |= BP_HIDDEN;
+          g_breakPoints[ip + g_instrLength[op]] |= BP_HIDDEN;
           paused = false;
         }
       }
@@ -345,15 +363,11 @@ int main(int argc, char** argv)
       {
         if (g_ppu.TriggerNmi())
         {
-          updateTexture(textureId, (const char*)g_nesPixels.data(), 256, 240);
+          updateTexture(textureId, (const char*)&g_nesPixels[0], 256, 240);
           g_cpu.ExecuteNmi();
         }
 
-        if (cpuDelay > 0)
-          --cpuDelay;
-
-        if (cpuDelay == 0)
-          cpuDelay = g_cpu.Tick();
+        cpuDelay = g_cpu.Tick();
 
         g_ppu.Tick();
         g_ppu.Tick();
@@ -386,7 +400,7 @@ int main(int argc, char** argv)
 
         if (g_ppu.TriggerNmi())
         {
-          updateTexture(textureId, (const char*)g_nesPixels.data(), 256, 240);
+          updateTexture(textureId, (const char*)&g_nesPixels[0], 256, 240);
           g_cpu.ExecuteNmi();
         }
       }
@@ -422,7 +436,7 @@ int main(int argc, char** argv)
       ++totalTicks;
     }
 
-//    if (screenAcc_ns > screenPeriod_ns)
+    //if (screenAcc_ns > screenPeriod_ns)
     {
       ImGui::Begin("Console output");
       ImGui::Image((ImTextureID)textureId, ImVec2(256, 240));
@@ -433,7 +447,10 @@ int main(int argc, char** argv)
       ImGui::End();
 
       DrawDebugger();
-      DrawMemory(0x0000, 0x800);
+      char buf0[8] = "0000";
+      char buf1[8] = "1000";
+      DrawMemory("Memory 1", buf0, 8);
+      DrawMemory("Memory 2", buf1, 8);
       DrawPPU();
 
       // Rendering

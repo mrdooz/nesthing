@@ -6,14 +6,14 @@
 
 using namespace nes;
 
-namespace
-{
-  size_t MEMORY_SIZE = 64 * 1024;
-}
+// namespace
+// {
+//   size_t MEMORY_SIZE = 64 * 1024;
+// }
 
 Cpu6502::Cpu6502(PPU* ppu, MMC1* mmc1)
-  : _memory(MEMORY_SIZE)
-  , _currentBank(0)
+//  : _memory(MEMORY_SIZE)
+  : _currentBank(0)
   , _ppu(ppu)
   , m_inNmi(false)
   , m_buttonIdx(0)
@@ -181,8 +181,7 @@ u8 Cpu6502::ReadMemory(u16 addr)
     }
   }
 
-  u16 maskedAddr = addr & (u16)0x7ff;
-  return _memory[maskedAddr];
+  return _memory[addr];
 }
 
 
@@ -520,9 +519,13 @@ u8 Cpu6502::Tick()
       lo = ReadMemory(addr);
     case OpCode::ADC_IMM:
       {
-        s16 res = (s8)lo + (s8) _regs.a + _flags.c;
+        tmp0 = _regs.a;
+        u16 res = lo + _regs.a + _flags.c;
         WriteRegisterAndFlags(&_regs.a, (u8)res);
-        _flags.v = res > 127 || res < -128 ? 1 : 0;
+        // overflow flag indicates signed overflow, ie: Pos + Pos = Neg, or Neg + Neg = Pos
+        // to check this, use the high bit of A, imm, res
+        _flags.v =  ((tmp0 ^ res) & (lo ^ res)) & 0x80 ? 1 : 0;
+        // carry is unsigned overflow
         _flags.c = res > 255 ? 1 : 0;
         break;
       }
